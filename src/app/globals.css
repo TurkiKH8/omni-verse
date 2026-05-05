@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-bg: #120d1f;
+  --color-brand-orange: #d4860a;
+  --color-brand-orange-hover: #b8720a;
+  --color-brand-purple: #7c3aed;
+  --color-brand-cream: #e8d5a0;
+  --color-brand-maroon: #3d0a0a;
+  --color-brand-card: #1e1530;
+  --color-brand-border: #2e2050;
+}
+
+:root {
+  --background: #120d1f;
+  --foreground: #e8d5a0;
+}
+
+body {
+  background-color: #120d1f;
+  color: #e8d5a0;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
