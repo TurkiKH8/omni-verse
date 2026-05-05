@@ -246,7 +246,7 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
       )}
       <div className="overflow-x-auto">
         <div className="min-w-max">
-          <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(120px, 1fr))` }}>
+          <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(85px, 1fr))` }}>
             {board.map((col) => (
               <div key={col[0].category} className="px-3 py-3 rounded-xl text-center text-xs font-bold uppercase tracking-wide" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
                 {col[0].category}
@@ -254,12 +254,12 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
             ))}
           </div>
           {POINT_VALUES.map((pv, rowIdx) => (
-            <div key={pv} className="grid gap-1.5 mt-1.5" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(120px, 1fr))` }}>
+            <div key={pv} className="grid gap-1.5 mt-1.5" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(85px, 1fr))` }}>
               {board.map((col) => {
                 const cell = col[rowIdx];
                 return (
                   <button key={`${cell.category}-${cell.points}`} onClick={() => !cell.answered && onSelectCell(cell)}
-                    className="py-5 rounded-xl text-center font-extrabold text-lg transition-all"
+                    className="py-3 md:py-5 rounded-xl text-center font-extrabold text-sm md:text-lg transition-all"
                     style={{ backgroundColor: cell.answered ? "#1e153088" : "#1e1530", border: `1px solid ${cell.answered ? "#2e205044" : "#2e2050"}`, color: cell.answered ? "#2e205066" : "#d4860a", cursor: cell.answered ? "default" : "pointer", textDecoration: cell.answered ? "line-through" : "none" }}>
                     {cell.answered ? "—" : cell.points.toLocaleString()}
                   </button>

@@ -52,7 +52,7 @@ export default function AuditLogPage() {
   const maxPage = Math.ceil(filtered.length / PAGE_SIZE) - 1;
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-8">
+    <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8">
       <div className="max-w-5xl mx-auto flex flex-col gap-6">
 
         {/* Header */}
@@ -106,7 +106,8 @@ export default function AuditLogPage() {
         </div>
 
         {/* Table */}
-        <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #2e2050" }}>
+        <div className="overflow-x-auto">
+        <div className="rounded-2xl overflow-hidden min-w-[600px]" style={{ border: "1px solid #2e2050" }}>
           <div
             className="grid px-5 py-3 text-xs font-bold uppercase tracking-wide"
             style={{ gridTemplateColumns: "150px 80px 1fr 1fr 80px", backgroundColor: "#0d091a", color: "#e8d5a0", opacity: 0.5 }}
@@ -142,6 +143,7 @@ export default function AuditLogPage() {
               );
             })
           )}
+        </div>
         </div>
 
         {/* Pagination */}

@@ -128,7 +128,7 @@ export default function QuestionsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-8 py-8">
+    <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8">
       <div className="max-w-5xl mx-auto flex flex-col gap-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -152,7 +152,8 @@ export default function QuestionsPage() {
           </select>
         </div>
 
-        <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #2e2050" }}>
+        <div className="overflow-x-auto">
+        <div className="rounded-2xl overflow-hidden min-w-[560px]" style={{ border: "1px solid #2e2050" }}>
           <div className="grid px-5 py-3 text-xs font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "120px 70px 1fr 160px 90px", backgroundColor: "#0d091a", color: "#e8d5a0", opacity: 0.5 }}>
             <span>Category</span><span>Points</span><span>Question</span><span>Answer</span><span className="text-center">Actions</span>
           </div>
@@ -171,6 +172,7 @@ export default function QuestionsPage() {
           {filtered.length === 0 && !loading && (
             <div className="px-5 py-10 text-center text-sm" style={{ color: "#e8d5a0", opacity: 0.4, backgroundColor: "#1e1530" }}>No questions found.</div>
           )}
+        </div>
         </div>
       </div>
 
