@@ -56,12 +56,13 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Profiles: one row per auth user, stores username + admin flag
+-- Profiles: one row per auth user, stores username + admin flag + developer level
 CREATE TABLE IF NOT EXISTS profiles (
-  id         UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-  username   TEXT UNIQUE,
-  is_admin   BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT now()
+  id              UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+  username        TEXT UNIQUE,
+  is_admin        BOOLEAN DEFAULT false,
+  developer_level TEXT CHECK (developer_level IN ('basic', 'senior')),
+  created_at      TIMESTAMPTZ DEFAULT now()
 );
 
 -- Purchases: which user has purchased access to which categories
@@ -154,6 +155,7 @@ CREATE POLICY "cat_write_admin"
 CREATE POLICY "q_select_public"
   ON questions FOR SELECT USING (true);
 
+-- Admins can do everything with questions
 CREATE POLICY "q_write_admin"
   ON questions FOR ALL
   USING (
@@ -161,6 +163,13 @@ CREATE POLICY "q_write_admin"
   )
   WITH CHECK (
     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_admin = true)
+  );
+
+-- Basic developers can INSERT questions only (no update/delete)
+CREATE POLICY "q_insert_developer"
+  ON questions FOR INSERT
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND developer_level IS NOT NULL)
   );
 
 -- ─── sessions ─────────────────────────────────────────────────
@@ -220,14 +229,17 @@ CREATE POLICY "profile_update_own"
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id AND is_admin = (SELECT is_admin FROM profiles WHERE id = auth.uid()));
 
--- Admins can read all profiles (for user management)
-CREATE POLICY "profile_admin_select"
-  ON profiles FOR SELECT
+-- Admins can read and update all profiles (for user management / developer roles)
+CREATE POLICY "profile_admin_all"
+  ON profiles FOR ALL
   USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_admin = true)
+  )
+  WITH CHECK (
     EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND is_admin = true)
   );
 
--- Middleware needs to read profiles — allow service role reads
+-- Middleware needs to read profiles for all authenticated requests
 CREATE POLICY "profile_service_select"
   ON profiles FOR SELECT
   USING (true);
@@ -268,78 +280,90 @@ ON CONFLICT DO NOTHING;
 -- 6. SEED DATA — Questions
 -- ─────────────────────────────────────────────────────────────
 
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What is the chemical symbol for water?',                              'H₂O'                                  FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'Which planet is known as the Red Planet?',                            'Mars'                                  FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What gas do plants absorb during photosynthesis?',                    'Carbon dioxide (CO₂)'                  FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What is the powerhouse of the cell?',                                 'The mitochondria'                      FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What element has the atomic number 79?',                              'Gold (Au)'                             FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What force causes objects to resist changes in state of motion?',     'Inertia'                               FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'In what year did World War II end?',                                  '1945'                                  FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'Who was the first man to walk on the Moon?',                          'Neil Armstrong'                        FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'Which ancient wonder was located in Alexandria, Egypt?',              'The Lighthouse of Alexandria'          FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What year did the Berlin Wall fall?',                                 '1989'                                  FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'Who was the first female Prime Minister of the United Kingdom?',      'Margaret Thatcher'                     FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What ship sank after hitting an iceberg in 1912?',                    'The Titanic'                           FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What is the capital city of France?',                                 'Paris'                                 FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'Which is the longest river in the world?',                            'The Nile'                              FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What country has the most natural lakes in the world?',               'Canada'                                FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What is the smallest country in the world by area?',                  'Vatican City'                          FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'Which mountain range separates Europe from Asia?',                    'The Ural Mountains'                    FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the capital city of Australia?',                              'Canberra'                              FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'How many players are on a soccer team on the field?',                 '11 players'                            FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'In which sport would you perform a slam dunk?',                       'Basketball'                            FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'How many Grand Slam tournaments are there in tennis?',                '4'                                     FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What country hosted the 2022 FIFA World Cup?',                        'Qatar'                                 FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'How many rings are on the Olympic flag?',                             '5 rings'                               FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the maximum score in a perfect game of bowling?',             '300'                                   FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What movie features the line I''ll be back?',                         'The Terminator'                        FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'Which animated film features a character named Simba?',               'The Lion King'                         FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'Who directed the movie Titanic (1997)?',                              'James Cameron'                         FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'In Breaking Bad, what drug does Walter White produce?',               'Methamphetamine (meth)'                FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What is the highest-grossing film of all time (unadjusted)?',         'Avatar (2009)'                         FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'In which film does Forrest Gump say Life is like a box of chocolates?','Forrest Gump'                          FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'How many strings does a standard guitar have?',                       '6 strings'                             FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'What singer is known as the Queen of Pop?',                           'Madonna'                               FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'Which band performed Bohemian Rhapsody?',                             'Queen'                                 FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What is Beyoncé''s debut solo album?',                                'Dangerously in Love'                   FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'Which composer wrote the Moonlight Sonata?',                          'Ludwig van Beethoven'                  FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the best-selling album of all time?',                         'Thriller by Michael Jackson'           FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What does WWW stand for?',                                            'World Wide Web'                        FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'What company created the iPhone?',                                    'Apple'                                 FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What programming language is primarily used for web styling?',        'CSS'                                   FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What does CPU stand for?',                                            'Central Processing Unit'               FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'In what year was the first iPhone released?',                         '2007'                                  FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the name of the world''s first programmable electronic computer?','ENIAC'                              FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'Who wrote Romeo and Juliet?',                                         'William Shakespeare'                   FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'What is the first book of the Harry Potter series?',                  'The Philosopher''s Stone'              FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'Who wrote 1984?',                                                     'George Orwell'                         FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'In which novel would you find the character Atticus Finch?',          'To Kill a Mockingbird'                 FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What classic novel begins with "Call me Ishmael"?',                   'Moby-Dick'                             FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'Who wrote One Hundred Years of Solitude?',                            'Gabriel García Márquez'                FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'Who painted the Mona Lisa?',                                          'Leonardo da Vinci'                     FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'In which museum is the Mona Lisa displayed?',                         'The Louvre, Paris'                     FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'Which artist cut off his own ear?',                                   'Vincent van Gogh'                      FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What art movement did Salvador Dalí belong to?',                      'Surrealism'                            FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'Who sculpted David?',                                                 'Michelangelo'                          FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'Which painter is known for his water lily series?',                   'Claude Monet'                          FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What is the main ingredient in guacamole?',                           'Avocado'                               FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'From which country does sushi originate?',                            'Japan'                                 FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What type of pastry is used to make a croissant?',                    'Laminated (puff) pastry'               FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What compound gives turmeric its yellow color?',                      'Curcumin'                              FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What is the traditional base of a Kyushu-style Ramen broth?',         'Tonkotsu (pork bone)'                  FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What country produces the most coffee in the world?',                 'Brazil'                                FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What is the largest animal on Earth?',                                'The blue whale'                        FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'How many legs does a spider have?',                                   '8 legs'                                FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What is the tallest type of tree in the world?',                      'Coast redwood (Sequoia sempervirens)'  FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What do you call a group of lions?',                                  'A pride'                               FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'How long is a giraffe''s tongue approximately?',                      'Around 45–50 cm (18–20 inches)'        FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the process called when a caterpillar becomes a butterfly?',  'Metamorphosis'                         FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'How many branches of government does the United States have?',        '3 (Legislative, Executive, Judicial)'  FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'What does NATO stand for?',                                           'North Atlantic Treaty Organization'    FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'Who is the head of state in the United Kingdom?',                     'The King (currently King Charles III)' FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What is the name of the lower house of the Indian Parliament?',       'Lok Sabha'                             FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'In what year was the United Nations founded?',                        '1945'                                  FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
-INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What document signed in Maastricht in 1992 formed the European Union?','The Maastricht Treaty'                FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
+-- Science
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'How many planets are in our solar system?',                                              '8'                                       FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'What is the chemical symbol for gold?',                                                  'Au'                                      FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'Which organ in the human body produces insulin?',                                        'The pancreas'                            FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What is the name of the process by which a solid turns directly into a gas?',           'Sublimation'                             FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What is the atomic number of carbon?',                                                   '6'                                       FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the half-life of Carbon-14, used in radiocarbon dating?',                        'Approximately 5,730 years'               FROM categories WHERE name_en = 'Science' ON CONFLICT DO NOTHING;
+-- History
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'Who was the first President of the United States?',                                      'George Washington'                       FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'In what year did World War I begin?',                                                    '1914'                                    FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What was the name of the first artificial satellite launched into space?',               'Sputnik 1'                               FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'Who was the leader of the Soviet Union during the Cuban Missile Crisis?',                'Nikita Khrushchev'                       FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What was the name of the treaty that officially ended World War I?',                     'The Treaty of Versailles'                FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'In what year did the Byzantine Empire fall to the Ottoman Turks?',                       '1453'                                    FROM categories WHERE name_en = 'History' ON CONFLICT DO NOTHING;
+-- Geography
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What is the capital city of France?',                                                    'Paris'                                   FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'What is the largest continent by area?',                                                 'Asia'                                    FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'Which country has the most natural lakes in the world?',                                 'Canada'                                  FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What is the name of the world''s largest hot desert?',                                   'The Sahara Desert'                       FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What is the capital city of Kazakhstan?',                                                 'Astana'                                  FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'Through how many countries does the Danube River flow?',                                 '10 countries'                            FROM categories WHERE name_en = 'Geography' ON CONFLICT DO NOTHING;
+-- Sports
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'How many players from one team are on the court in basketball?',                         '5 players'                               FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'In which country was the first FIFA World Cup held?',                                    'Uruguay (1930)'                          FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'How many holes are played in a standard round of golf?',                                 '18 holes'                                FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'In what year were the first modern Olympic Games held?',                                  '1896 (Athens, Greece)'                   FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What is the maximum number of sets in a men''s Grand Slam singles match?',               '5 sets'                                  FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the official weight of the men''s Olympic shot put in kilograms?',               '7.26 kg'                                 FROM categories WHERE name_en = 'Sports' ON CONFLICT DO NOTHING;
+-- Movies & TV
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'Which animated Disney film features a young lion named Simba?',                          'The Lion King'                           FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'Who played Iron Man in the Marvel Cinematic Universe?',                                  'Robert Downey Jr.'                       FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'Which director made The Dark Knight (2008) and Inception (2010)?',                      'Christopher Nolan'                       FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'In what year was the original Star Wars film first released?',                           '1977'                                    FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What is the name of the fictional African country in Black Panther?',                    'Wakanda'                                 FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'Who directed the 1968 science fiction epic 2001: A Space Odyssey?',                     'Stanley Kubrick'                         FROM categories WHERE name_en = 'Movies & TV' ON CONFLICT DO NOTHING;
+-- Music
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'How many strings does a standard guitar have?',                                          '6 strings'                               FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'Which band recorded the song Bohemian Rhapsody?',                                        'Queen'                                   FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What is the musical term for the speed or pace of a piece of music?',                   'Tempo'                                   FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'In what year did Michael Jackson release the album Thriller?',                           '1982'                                    FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'Who composed the opera The Magic Flute?',                                                'Wolfgang Amadeus Mozart'                 FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the name of the scale that includes all 12 half-steps within one octave?',      'The chromatic scale'                     FROM categories WHERE name_en = 'Music' ON CONFLICT DO NOTHING;
+-- Technology
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What does CPU stand for?',                                                               'Central Processing Unit'                 FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'Who co-founded Apple Inc. alongside Steve Jobs?',                                        'Steve Wozniak'                           FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What programming language was created by Guido van Rossum?',                            'Python'                                  FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'In what year did Tim Berners-Lee invent the World Wide Web?',                           '1989'                                    FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What does HTTP stand for?',                                                              'Hypertext Transfer Protocol'             FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What encryption standard replaced DES as the US federal standard in 2001?',             'AES (Advanced Encryption Standard)'      FROM categories WHERE name_en = 'Technology' ON CONFLICT DO NOTHING;
+-- Literature
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'Who wrote the play Romeo and Juliet?',                                                   'William Shakespeare'                     FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'In which novel does the wealthy and mysterious character Jay Gatsby appear?',            'The Great Gatsby'                        FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What is the subtitle of Mary Shelley''s novel Frankenstein?',                            'The Modern Prometheus'                   FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'Who wrote the epic poem Paradise Lost?',                                                  'John Milton'                             FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'In what language did Dante Alighieri originally write the Divine Comedy?',               'Italian (Tuscan dialect)'                FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the name of the narrator in Vladimir Nabokov''s novel Lolita?',                 'Humbert Humbert'                         FROM categories WHERE name_en = 'Literature' ON CONFLICT DO NOTHING;
+-- Art
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'Who painted the Mona Lisa?',                                                             'Leonardo da Vinci'                       FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'Which Spanish artist co-founded the Cubist movement?',                                   'Pablo Picasso'                           FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'In which century did the Italian Renaissance begin?',                                    'The 14th century (1300s)'                FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'Which Dutch Golden Age painter created Girl with a Pearl Earring?',                      'Johannes Vermeer'                        FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What is the term for applying paint so thickly it creates a 3D textured surface?',      'Impasto'                                 FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'Who sculpted the famous statue The Thinker?',                                             'Auguste Rodin'                           FROM categories WHERE name_en = 'Art' ON CONFLICT DO NOTHING;
+-- Food & Drink
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What fruit is the main ingredient in guacamole?',                                        'Avocado'                                 FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'From which country does pizza originally come?',                                         'Italy'                                   FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What is the Japanese alcoholic drink made from fermented rice called?',                  'Sake'                                    FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What expensive spice comes from the dried stigmas of Crocus sativus flowers?',           'Saffron'                                 FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What French technique involves cooking vacuum-sealed food in a temperature-controlled water bath?', 'Sous vide'               FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What chemical reaction between amino acids and sugars causes food to brown when cooked?', 'The Maillard reaction'                  FROM categories WHERE name_en = 'Food & Drink' ON CONFLICT DO NOTHING;
+-- Nature
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'What is the largest animal on Earth?',                                                   'The blue whale'                          FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'How many bones does an adult human body have?',                                          '206 bones'                               FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What is the name of the deepest known point in the ocean?',                             'Challenger Deep (Mariana Trench)'        FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'What is the term for an animal that is active during dawn and dusk?',                   'Crepuscular'                             FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'What is the scientific term for the process by which trees shed their leaves?',         'Abscission'                              FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What is the approximate number of neurons in the human brain?',                         'About 86 billion neurons'               FROM categories WHERE name_en = 'Nature' ON CONFLICT DO NOTHING;
+-- Politics
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 200,  'How many permanent members does the UN Security Council have?',                         '5 permanent members'                     FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 400,  'What does NATO stand for?',                                                              'North Atlantic Treaty Organization'      FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 600,  'What political system divides power between a central and regional governments?',        'Federalism'                              FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 800,  'In what year was the Universal Declaration of Human Rights adopted by the UN?',         '1948'                                    FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1000, 'Who was the first Secretary-General of the United Nations?',                            'Trygve Lie (Norway)'                    FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
+INSERT INTO questions (category_id, points, question_en, answer_en) SELECT id, 1200, 'What Latin term describes the legal principle that past court decisions must be followed?', 'Stare decisis'                       FROM categories WHERE name_en = 'Politics' ON CONFLICT DO NOTHING;
 
 -- ─────────────────────────────────────────────────────────────
 -- 7. SEED AUDIT LOG

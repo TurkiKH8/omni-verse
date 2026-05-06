@@ -6,15 +6,14 @@ import { useRouter } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 
 export default function AdminLoginPage() {
-  const router = useRouter();
-  const [stage, setStage] = useState<"email" | "otp">("email");
-  const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const router   = useRouter();
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState("");
 
-  const handleSendOtp = async () => {
-    if (!email.trim()) return;
+  const handleLogin = async () => {
+    if (!email.trim() || !password) return;
     setLoading(true);
     setError("");
 
@@ -24,46 +23,36 @@ export default function AdminLoginPage() {
       return;
     }
 
-    const { error: authError } = await supabase.auth.signInWithOtp({ email });
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (authError) {
-      setError(authError.message);
-    } else {
-      setStage("otp");
-
-      await supabase.from("audit_log").insert({
-        user_email: email,
-        action: "OTP sent for admin login",
-        target: email,
-        type: "login",
-      });
+    if (authError || !data.user) {
+      setError("Invalid email or password.");
+      setLoading(false);
+      return;
     }
-    setLoading(false);
-  };
 
-  const handleVerify = async () => {
-    if (otp.length !== 6) return;
-    setLoading(true);
-    setError("");
+    // Verify this account has admin or developer access
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_admin, developer_level")
+      .eq("id", data.user.id)
+      .maybeSingle();
 
-    const { error: authError } = await supabase.auth.verifyOtp({
-      email,
-      token: otp,
-      type: "email",
+    if (!profile?.is_admin && !profile?.developer_level) {
+      await supabase.auth.signOut();
+      setError("Access denied. This account does not have admin or developer privileges.");
+      setLoading(false);
+      return;
+    }
+
+    await supabase.from("audit_log").insert({
+      user_email: email,
+      action: "Admin login successful",
+      target: profile.is_admin ? "Admin" : `Developer (${profile.developer_level})`,
+      type: "login",
     });
 
-    if (authError) {
-      setError("Invalid or expired OTP. Try again.");
-    } else {
-      await supabase.from("audit_log").insert({
-        user_email: email,
-        action: "Admin login successful",
-        target: email,
-        type: "login",
-      });
-      router.push("/admin/dashboard");
-    }
-    setLoading(false);
+    router.push("/admin/dashboard");
   };
 
   return (
@@ -76,7 +65,7 @@ export default function AdminLoginPage() {
           </div>
           <h1 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Admin Access</h1>
           <p className="text-sm mt-1" style={{ color: "#e8d5a0", opacity: 0.55 }}>
-            {stage === "email" ? "Enter your admin email to receive an OTP" : `OTP sent to ${email}`}
+            Authorised personnel only
           </p>
         </div>
 
@@ -87,63 +76,41 @@ export default function AdminLoginPage() {
             </div>
           )}
 
-          {stage === "email" ? (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Email Address</label>
-                <input
-                  type="email"
-                  placeholder="admin@omniverse.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSendOtp()}
-                  className="w-full px-4 py-3 rounded-xl text-sm outline-none"
-                  style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
-                  autoFocus
-                />
-              </div>
-              <button
-                onClick={handleSendOtp}
-                disabled={loading || !email.trim()}
-                className="w-full py-3 rounded-full font-bold text-sm transition-opacity"
-                style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: loading || !email.trim() ? 0.4 : 1 }}
-              >
-                {loading ? "Sending…" : "Send OTP"}
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>6-Digit OTP</label>
-                <input
-                  type="text"
-                  placeholder="• • • • • •"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                  onKeyDown={(e) => e.key === "Enter" && handleVerify()}
-                  className="w-full px-4 py-3 rounded-xl text-sm outline-none text-center tracking-widest font-bold"
-                  style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", fontSize: "20px" }}
-                  autoFocus
-                />
-              </div>
-              <button
-                onClick={handleVerify}
-                disabled={loading || otp.length !== 6}
-                className="w-full py-3 rounded-full font-bold text-sm transition-opacity"
-                style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: loading || otp.length !== 6 ? 0.4 : 1 }}
-              >
-                {loading ? "Verifying…" : "Verify & Enter"}
-              </button>
-              <button
-                onClick={() => { setStage("email"); setOtp(""); setError(""); }}
-                className="text-xs text-center"
-                style={{ color: "#e8d5a0", opacity: 0.5 }}
-              >
-                Use a different email
-              </button>
-            </>
-          )}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Email</label>
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+              style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+              autoFocus
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Password</label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+              style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+            />
+          </div>
+
+          <button
+            onClick={handleLogin}
+            disabled={loading || !email.trim() || !password}
+            className="w-full py-3 rounded-full font-bold text-sm transition-opacity"
+            style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: loading || !email.trim() || !password ? 0.4 : 1 }}
+          >
+            {loading ? "Signing in…" : "Sign In"}
+          </button>
         </div>
 
         <Link href="/" className="text-center text-xs" style={{ color: "#e8d5a0", opacity: 0.4 }}>

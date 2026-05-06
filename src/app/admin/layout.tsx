@@ -1,12 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import AdminSidebar from "@/components/admin/AdminSidebar";
+import { supabase } from "@/lib/supabase/client";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname    = usePathname();
+  const [sidebarOpen,    setSidebarOpen]    = useState(false);
+  const [isAdmin,        setIsAdmin]        = useState(false);
+  const [developerLevel, setDeveloperLevel] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase
+        .from("profiles")
+        .select("is_admin, developer_level")
+        .eq("id", user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          setIsAdmin(data?.is_admin ?? false);
+          setDeveloperLevel(data?.developer_level ?? null);
+        });
+    });
+  }, []);
 
   if (pathname === "/admin/login") {
     return <>{children}</>;
@@ -15,7 +33,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "#120d1f" }}>
 
-      {/* Mobile overlay — dark background behind sidebar */}
+      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 md:hidden"
@@ -30,13 +48,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <AdminSidebar onClose={() => setSidebarOpen(false)} />
+        <AdminSidebar
+          onClose={() => setSidebarOpen(false)}
+          isAdmin={isAdmin}
+          developerLevel={developerLevel}
+        />
       </div>
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* Mobile top bar with hamburger */}
+        {/* Mobile top bar */}
         <div
           className="flex items-center gap-4 px-5 py-4 md:hidden"
           style={{ borderBottom: "1px solid #2e2050", backgroundColor: "#0d091a" }}

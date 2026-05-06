@@ -2,6 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+// Routes a Basic Developer is allowed to access
+const DEVELOPER_ALLOWED = ["/admin/questions", "/admin/login"];
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   let response = NextResponse.next({ request });
@@ -25,7 +28,6 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Refresh session — keeps token alive on every request
   const { data: { user } } = await supabase.auth.getUser();
 
   // ── Admin portal protection ──────────────────────────────────────────────
@@ -33,15 +35,26 @@ export async function middleware(request: NextRequest) {
     if (!user) {
       return NextResponse.redirect(new URL("/admin/login", request.url));
     }
+
     const { data: profile } = await supabase
       .from("profiles")
-      .select("is_admin")
+      .select("is_admin, developer_level")
       .eq("id", user.id)
       .maybeSingle();
 
-    if (!profile?.is_admin) {
-      return NextResponse.redirect(new URL("/admin/login", request.url));
+    // Full admin — allow everything
+    if (profile?.is_admin) {
+      return response;
     }
+
+    // Developer — allow only permitted routes
+    if (profile?.developer_level) {
+      const allowed = DEVELOPER_ALLOWED.some((p) => pathname.startsWith(p));
+      if (allowed) return response;
+    }
+
+    // No valid role
+    return NextResponse.redirect(new URL("/admin/login", request.url));
   }
 
   // ── Arena protection ────────────────────────────────────────────────────
