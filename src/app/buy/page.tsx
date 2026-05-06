@@ -1,5 +1,22 @@
+"use client";
+
+import { Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+
+function AccessBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("reason") !== "access") return null;
+  return (
+    <div className="px-5 py-4 rounded-2xl text-sm font-medium flex items-center gap-3"
+      style={{ backgroundColor: "#d4860a22", border: "1px solid #d4860a66", color: "#e8d5a0" }}>
+      <span className="text-xl">🔒</span>
+      <span>You need to purchase at least one category to access the Arena. Pick a plan below to get started.</span>
+    </div>
+  );
+}
 
 export default function BuyPage() {
   return (
@@ -11,6 +28,9 @@ export default function BuyPage() {
 
       <main className="flex-1 px-6 py-16 relative z-10">
         <div className="max-w-4xl mx-auto flex flex-col gap-10">
+          <Suspense fallback={null}>
+            <AccessBanner />
+          </Suspense>
           <div className="text-center">
             <h1 className="text-4xl font-extrabold" style={{ color: "#e8d5a0" }}>Choose Your Session</h1>
             <p className="mt-3 text-base" style={{ color: "#e8d5a0", opacity: 0.65 }}>

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
 
 const navItems = [
   { icon: "📊", label: "Dashboard",  href: "/admin/dashboard"  },
@@ -14,6 +15,12 @@ const navItems = [
 
 export default function AdminSidebar({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname();
+  const router   = useRouter();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/admin/login");
+  };
 
   return (
     <aside
@@ -73,6 +80,7 @@ export default function AdminSidebar({ onClose }: { onClose?: () => void }) {
           <span>←</span> Back to Site
         </Link>
         <button
+          onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left"
           style={{ color: "#ef4444", opacity: 0.7 }}
         >
