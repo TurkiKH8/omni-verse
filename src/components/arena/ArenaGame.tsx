@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { ALL_CATEGORIES, MOCK_QUESTIONS } from "@/lib/mockQuestions";
 
 type Step = "categories" | "gameMode" | "session" | "board" | "question" | "answer" | "results";
 type GameMode = "solo" | "team";
 
-interface Team     { id: number; name: string; score: number; }
+interface Team      { id: number; name: string; score: number; }
 interface BoardCell { category: string; points: number; question: string; answer: string; answered: boolean; }
 
 // ─── Question count per number of selected categories ─────────────────────────
@@ -17,7 +18,6 @@ const QUESTIONS_PER_CATEGORY: Record<number, number> = {
 };
 
 function getPointValues(questionsPerCat: number): number[] {
-  // Keep the classic Jeopardy values for 6-question boards
   if (questionsPerCat === 6) return [200, 400, 600, 800, 1000, 1200];
   return Array.from({ length: questionsPerCat }, (_, i) => (i + 1) * 100);
 }
@@ -28,9 +28,7 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
   if (!isSupabaseConfigured) return null;
   try {
     const { data: cats } = await supabase
-      .from("categories")
-      .select("id, name_en")
-      .in("name_en", categories);
+      .from("categories").select("id, name_en").in("name_en", categories);
     if (!cats || cats.length === 0) return null;
 
     const { data: qs } = await supabase
@@ -41,37 +39,29 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
     if (!qs || qs.length === 0) return null;
 
     const pointValues = getPointValues(questionsPerCat);
-
     return categories.map((catName) => {
       const catRow = cats.find((c) => c.name_en === catName);
       const catQs  = qs.filter((x) => x.category_id === catRow?.id).slice(0, questionsPerCat);
       return pointValues.map((pv, idx) => ({
-        category: catName,
-        points:   pv,
+        category: catName, points: pv,
         question: catQs[idx]?.question_en ?? `${catName} – ${pv} pts`,
         answer:   catQs[idx]?.answer_en   ?? "—",
         answered: false,
       }));
     });
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function buildBoardFromMock(categories: string[], questionsPerCat: number): BoardCell[][] {
   const pointValues = getPointValues(questionsPerCat);
   return categories.map((cat) => {
     const qs = MOCK_QUESTIONS[cat] ?? [];
-    return pointValues.map((pv, idx) => {
-      const q = qs[idx];
-      return {
-        category: cat,
-        points:   pv,
-        question: q?.question ?? `[Mock] ${cat} – question ${idx + 1}`,
-        answer:   q?.answer   ?? "—",
-        answered: false,
-      };
-    });
+    return pointValues.map((pv, idx) => ({
+      category: cat, points: pv,
+      question: qs[idx]?.question ?? `[Mock] ${cat} – question ${idx + 1}`,
+      answer:   qs[idx]?.answer   ?? "—",
+      answered: false,
+    }));
   });
 }
 
@@ -83,7 +73,6 @@ async function saveSession(name: string, mode: GameMode, categories: string[], t
       total_questions: categories.length * questionsPerCat,
       completed_at: new Date().toISOString(),
     }).select().single();
-
     if (session && mode === "team") {
       const sorted = [...teams].sort((a, b) => b.score - a.score);
       await supabase.from("teams").insert(
@@ -93,28 +82,19 @@ async function saveSession(name: string, mode: GameMode, categories: string[], t
   } catch { /* silently skip if DB not ready */ }
 }
 
-// ─── No Purchase Modal ────────────────────────────────────────────────────────
+// ─── No Coins Banner ──────────────────────────────────────────────────────────
 
-function NoPurchaseModal() {
+function NoCoinsBanner({ onDismiss }: { onDismiss: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "#120d1fcc", backdropFilter: "blur(6px)" }}>
-      <div className="w-full max-w-sm rounded-3xl p-8 flex flex-col items-center gap-5 text-center"
-        style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
-        <div className="text-5xl">🎯</div>
-        <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>No Categories Yet!</h2>
-        <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.65 }}>
-          You need to purchase at least <strong style={{ color: "#d4860a" }}>1 category</strong> to
-          play in the Arena. Head over to the shop and pick one!
+    <div className="fixed top-4 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+      <div className="flex items-center gap-3 px-5 py-3 rounded-2xl shadow-xl pointer-events-auto"
+        style={{ backgroundColor: "#1e1530", border: "1px solid #d4860a", maxWidth: 480 }}>
+        <span className="text-2xl">🪙</span>
+        <p className="text-sm flex-1" style={{ color: "#e8d5a0" }}>
+          You have <strong style={{ color: "#d4860a" }}>0 category coins</strong>. Buy some from{" "}
+          <Link href="/buy" className="font-bold underline" style={{ color: "#d4860a" }}>here</Link>.
         </p>
-        <Link href="/buy"
-          className="w-full py-3 rounded-full font-bold text-sm text-center hover:opacity-90"
-          style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-          Browse Categories
-        </Link>
-        <Link href="/" className="text-sm hover:underline" style={{ color: "#e8d5a0", opacity: 0.45 }}>
-          Back to Home
-        </Link>
+        <button onClick={onDismiss} className="text-lg leading-none" style={{ color: "#e8d5a0", opacity: 0.5 }}>✕</button>
       </div>
     </div>
   );
@@ -132,7 +112,7 @@ function StepIndicator({ step }: { step: Step }) {
       {STEP_LABELS.map((label, i) => (
         <div key={label} className="flex items-center gap-2">
           <div className="flex flex-col items-center gap-1">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all"
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
               style={{ backgroundColor: i <= current ? "#d4860a" : "#1e1530", color: i <= current ? "#120d1f" : "#e8d5a0", border: i <= current ? "none" : "1px solid #2e2050", opacity: i > current ? 0.45 : 1 }}>
               {i < current ? "✓" : i + 1}
             </div>
@@ -147,8 +127,16 @@ function StepIndicator({ step }: { step: Step }) {
 
 // ─── Category Select ──────────────────────────────────────────────────────────
 
-function CategorySelect({ selected, onToggle, onNext }: { selected: string[]; onToggle: (c: string) => void; onNext: () => void }) {
+function CategorySelect({ selected, hasPurchase, onToggle, onShowNoBanner, onNext }:
+  { selected: string[]; hasPurchase: boolean; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
   const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
+
+  const handleClick = (cat: string) => {
+    if (selected.includes(cat)) { onToggle(cat); return; } // deselect always works
+    if (!hasPurchase) { onShowNoBanner(); return; }        // no coins → banner
+    onToggle(cat);
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <StepIndicator step="categories" />
@@ -156,9 +144,7 @@ function CategorySelect({ selected, onToggle, onNext }: { selected: string[]; on
         <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Pick Your Categories</h2>
         <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>
           Choose 1–6 categories · {selected.length}/6 selected
-          {selected.length > 0 && (
-            <span style={{ color: "#d4860a" }}> · {questionsPerCat} questions each</span>
-          )}
+          {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} questions each</span>}
         </p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -166,7 +152,7 @@ function CategorySelect({ selected, onToggle, onNext }: { selected: string[]; on
           const isSelected = selected.includes(cat);
           const disabled   = !isSelected && selected.length >= 6;
           return (
-            <button key={cat} onClick={() => !disabled && onToggle(cat)}
+            <button key={cat} onClick={() => !disabled && handleClick(cat)}
               className="px-4 py-4 rounded-2xl text-sm font-semibold text-left transition-all"
               style={{ backgroundColor: isSelected ? "#d4860a22" : "#1e1530", border: `2px solid ${isSelected ? "#d4860a" : "#2e2050"}`, color: isSelected ? "#d4860a" : disabled ? "#e8d5a033" : "#e8d5a0", cursor: disabled ? "not-allowed" : "pointer" }}>
               {isSelected && <span className="mr-2">✓</span>}{cat}
@@ -278,7 +264,6 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
   const answered = board.flat().filter((c) => c.answered).length;
   const total    = board.flat().length;
   const rows     = board[0]?.length ?? 0;
-
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
@@ -291,7 +276,6 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           End Game
         </button>
       </div>
-
       {gameMode === "team" && teams.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {[...teams].sort((a, b) => b.score - a.score).map((team) => (
@@ -303,20 +287,16 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           ))}
         </div>
       )}
-
       <div className="overflow-auto max-h-[70vh]">
         <div className="min-w-max">
-          {/* Category headers */}
           <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(85px, 1fr))` }}>
             {board.map((col) => (
-              <div key={col[0].category} className="px-3 py-3 rounded-xl text-center text-xs font-bold uppercase tracking-wide sticky top-0"
+              <div key={col[0].category} className="px-3 py-3 rounded-xl text-center text-xs font-bold uppercase tracking-wide"
                 style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
                 {col[0].category}
               </div>
             ))}
           </div>
-
-          {/* Question rows */}
           {Array.from({ length: rows }, (_, rowIdx) => (
             <div key={rowIdx} className="grid gap-1.5 mt-1.5"
               style={{ gridTemplateColumns: `repeat(${board.length}, minmax(85px, 1fr))` }}>
@@ -326,7 +306,7 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
                   <button key={`${cell.category}-${cell.points}`}
                     onClick={() => !cell.answered && onSelectCell(cell)}
                     className="py-3 md:py-5 rounded-xl text-center font-extrabold text-sm md:text-base transition-all"
-                    style={{ backgroundColor: cell.answered ? "#1e153088" : "#1e1530", border: `1px solid ${cell.answered ? "#2e205044" : "#2e2050"}`, color: cell.answered ? "#2e205066" : "#d4860a", cursor: cell.answered ? "default" : "pointer", textDecoration: cell.answered ? "line-through" : "none" }}>
+                    style={{ backgroundColor: cell.answered ? "#1e153088" : "#1e1530", border: `1px solid ${cell.answered ? "#2e205044" : "#2e2050"}`, color: cell.answered ? "#2e205066" : "#d4860a", cursor: cell.answered ? "default" : "pointer" }}>
                     {cell.answered ? "—" : cell.points.toLocaleString()}
                   </button>
                 );
@@ -344,13 +324,11 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
 function QuestionView({ cell, onReveal }: { cell: BoardCell; onReveal: () => void }) {
   const [timeLeft, setTimeLeft] = useState(60);
   const [expired,  setExpired]  = useState(false);
-
   useEffect(() => {
     if (timeLeft <= 0) { setExpired(true); return; }
     const t = setInterval(() => setTimeLeft((s) => s - 1), 1000);
     return () => clearInterval(t);
   }, [timeLeft]);
-
   const timerColor = timeLeft > 20 ? "#d4860a" : timeLeft > 10 ? "#f59e0b" : "#ef4444";
   return (
     <div className="flex flex-col gap-6 items-center text-center">
@@ -449,34 +427,45 @@ function ResultsScreen({ teams, gameMode, soloScore, sessionName, onPlayAgain }:
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ArenaGame() {
-  const [step, setStep]                     = useState<Step>("categories");
-  const [selectedCategories, setSelected]   = useState<string[]>([]);
-  const [gameMode, setGameMode]             = useState<GameMode>("team");
-  const [teamCount, setTeamCount]           = useState(2);
-  const [teamNames, setTeamNames]           = useState<string[]>(["Team 1","Team 2","Team 3","Team 4","Team 5","Team 6"]);
-  const [teams, setTeams]                   = useState<Team[]>([]);
-  const [sessionName, setSessionName]       = useState("");
-  const [board, setBoard]                   = useState<BoardCell[][]>([]);
-  const [currentCell, setCurrentCell]       = useState<BoardCell | null>(null);
-  const [soloScore, setSoloScore]           = useState(0);
-  const [loadingGame, setLoadingGame]       = useState(false);
-  const [sessionSaved, setSessionSaved]     = useState(false);
-  const [hasPurchase, setHasPurchase]       = useState<boolean | null>(null);
+  const router = useRouter();
 
-  // Check if the user has any purchased categories
+  const [ready,    setReady]    = useState(false);   // auth check done
+  const [hasPurchase, setHasPurchase] = useState(false);
+  const [showBanner,  setShowBanner]  = useState(false);
+
+  const [step,     setStep]     = useState<Step>("categories");
+  const [selectedCategories, setSelected] = useState<string[]>([]);
+  const [gameMode, setGameMode] = useState<GameMode>("team");
+  const [teamCount, setTeamCount] = useState(2);
+  const [teamNames, setTeamNames] = useState<string[]>(["Team 1","Team 2","Team 3","Team 4","Team 5","Team 6"]);
+  const [teams,    setTeams]    = useState<Team[]>([]);
+  const [sessionName, setSessionName] = useState("");
+  const [board,    setBoard]    = useState<BoardCell[][]>([]);
+  const [currentCell, setCurrentCell] = useState<BoardCell | null>(null);
+  const [soloScore, setSoloScore] = useState(0);
+  const [loadingGame, setLoadingGame] = useState(false);
+  const [sessionSaved, setSessionSaved] = useState(false);
+
+  // ── Auth + purchase check ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!isSupabaseConfigured) { setHasPurchase(true); return; }
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) { setHasPurchase(false); return; }
+    if (!isSupabaseConfigured) { setReady(true); setHasPurchase(true); return; }
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session) {
+        router.replace("/login?next=/arena");
+        return;
+      }
+      // Check purchases
       const { data } = await supabase
         .from("purchases")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("user_id", session.user.id)
         .limit(1)
         .maybeSingle();
       setHasPurchase(!!data);
+      setReady(true);
     });
-  }, []);
+  }, [router]);
 
   const toggleCategory = useCallback((cat: string) => {
     setSelected((p) => p.includes(cat) ? p.filter((c) => c !== cat) : [...p, cat]);
@@ -490,7 +479,7 @@ export default function ArenaGame() {
   const startGame = async () => {
     setLoadingGame(true);
     const questionsPerCat = QUESTIONS_PER_CATEGORY[selectedCategories.length] ?? 6;
-    const dbBoard   = await fetchBoardFromSupabase(selectedCategories, questionsPerCat);
+    const dbBoard  = await fetchBoardFromSupabase(selectedCategories, questionsPerCat);
     const builtBoard = dbBoard ?? buildBoardFromMock(selectedCategories, questionsPerCat);
     setBoard(builtBoard);
     setTeams(Array.from({ length: teamCount }, (_, i) => ({ id: i, name: teamNames[i] || `Team ${i + 1}`, score: 0 })));
@@ -510,19 +499,14 @@ export default function ArenaGame() {
   }, [sessionSaved, sessionName, gameMode, selectedCategories]);
 
   const handleSelectCell = (cell: BoardCell) => { setCurrentCell(cell); setStep("question"); };
-  const handleReveal     = () => setStep("answer");
+  const handleReveal = () => setStep("answer");
 
   const handleAward = (teamId: number | null) => {
     if (!currentCell) return;
     let newTeams = teams;
     let newSolo  = soloScore;
-    if (gameMode === "solo") {
-      newSolo = soloScore + currentCell.points;
-      setSoloScore(newSolo);
-    } else if (teamId !== null) {
-      newTeams = teams.map((t) => t.id === teamId ? { ...t, score: t.score + currentCell.points } : t);
-      setTeams(newTeams);
-    }
+    if (gameMode === "solo") { newSolo = soloScore + currentCell.points; setSoloScore(newSolo); }
+    else if (teamId !== null) { newTeams = teams.map((t) => t.id === teamId ? { ...t, score: t.score + currentCell.points } : t); setTeams(newTeams); }
     const newBoard = board.map((col) => col.map((c) => c.category === currentCell.category && c.points === currentCell.points ? { ...c, answered: true } : c));
     setBoard(newBoard);
     setCurrentCell(null);
@@ -542,22 +526,43 @@ export default function ArenaGame() {
     setBoard([]); setCurrentCell(null); setSoloScore(0); setSessionSaved(false);
   };
 
-  // Still checking purchase status
-  if (hasPurchase === null) {
+  // Show spinner while auth check runs
+  if (!ready) {
     return (
       <div className="flex items-center justify-center py-24">
-        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#d4860a", borderTopColor: "transparent" }} />
+        <div className="w-8 h-8 rounded-full border-2 animate-spin"
+          style={{ borderColor: "#d4860a", borderTopColor: "transparent" }} />
       </div>
     );
   }
 
   return (
     <div className="w-full max-w-3xl mx-auto">
-      {!hasPurchase && <NoPurchaseModal />}
-      {step === "categories" && <CategorySelect selected={selectedCategories} onToggle={toggleCategory} onNext={() => setStep("gameMode")} />}
-      {step === "gameMode"   && <GameModeSelect gameMode={gameMode} teamCount={teamCount} teamNames={teamNames} onModeChange={setGameMode} onTeamCountChange={handleTeamCountChange} onTeamNameChange={(i, v) => setTeamNames((p) => { const u=[...p]; u[i]=v; return u; })} onBack={() => setStep("categories")} onNext={() => setStep("session")} />}
-      {step === "session"    && <SessionSetup sessionName={sessionName} onChange={setSessionName} onBack={() => setStep("gameMode")} onStart={startGame} loading={loadingGame} />}
-      {step === "board"   && board.length > 0 && <GameBoard board={board} teams={teams} gameMode={gameMode} sessionName={sessionName} onSelectCell={handleSelectCell} onEndGame={() => handleEndGame(teams, soloScore)} />}
+      {showBanner && <NoCoinsBanner onDismiss={() => setShowBanner(false)} />}
+
+      {step === "categories" && (
+        <CategorySelect
+          selected={selectedCategories}
+          hasPurchase={hasPurchase}
+          onToggle={toggleCategory}
+          onShowNoBanner={() => setShowBanner(true)}
+          onNext={() => setStep("gameMode")}
+        />
+      )}
+      {step === "gameMode" && (
+        <GameModeSelect gameMode={gameMode} teamCount={teamCount} teamNames={teamNames}
+          onModeChange={setGameMode} onTeamCountChange={handleTeamCountChange}
+          onTeamNameChange={(i, v) => setTeamNames((p) => { const u=[...p]; u[i]=v; return u; })}
+          onBack={() => setStep("categories")} onNext={() => setStep("session")} />
+      )}
+      {step === "session" && (
+        <SessionSetup sessionName={sessionName} onChange={setSessionName}
+          onBack={() => setStep("gameMode")} onStart={startGame} loading={loadingGame} />
+      )}
+      {step === "board" && board.length > 0 && (
+        <GameBoard board={board} teams={teams} gameMode={gameMode} sessionName={sessionName}
+          onSelectCell={handleSelectCell} onEndGame={() => handleEndGame(teams, soloScore)} />
+      )}
       {step === "question" && currentCell && <QuestionView cell={currentCell} onReveal={handleReveal} />}
       {step === "answer"   && currentCell && <AnswerReveal cell={currentCell} teams={teams} gameMode={gameMode} onAward={handleAward} onNoOne={handleNoOne} />}
       {step === "results"  && <ResultsScreen teams={teams} gameMode={gameMode} soloScore={soloScore} sessionName={sessionName} onPlayAgain={handlePlayAgain} />}

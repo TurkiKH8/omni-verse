@@ -57,19 +57,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/admin/login", request.url));
   }
 
-  // ── Arena protection ────────────────────────────────────────────────────
-  if (pathname === "/arena") {
-    if (!user) {
-      const url = new URL("/login", request.url);
-      url.searchParams.set("next", "/arena");
-      return NextResponse.redirect(url);
-    }
-    // Purchase check is handled inside ArenaGame — shows a modal instead of a hard redirect
-  }
-
   return response;
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/arena"],
+  matcher: ["/admin/:path*"],
 };
