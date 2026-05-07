@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 // Routes a Basic Developer is allowed to access
 const DEVELOPER_ALLOWED = ["/admin/questions", "/admin/login"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   let response = NextResponse.next({ request });
 

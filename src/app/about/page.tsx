@@ -1,8 +1,36 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Link from "next/link";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export default function AboutPage() {
+export const dynamic = "force-dynamic";
+
+const DEFAULT_ABOUT = "Omni-Verse is a competitive trivia gaming platform designed for teams and groups who love to challenge their knowledge. Inspired by Jeopardy, we bring the excitement of live trivia into a modern, digital format — available in both English and Arabic.";
+const DEFAULT_PRIVACY = "We respect your privacy. Your personal data is never sold to third parties. We only collect what is necessary to run the platform and keep your account secure.";
+const DEFAULT_POLICY = "By using Omni-Verse, you agree to play fair and not abuse the platform. Any attempt to exploit the system may result in account suspension.";
+
+export default async function AboutPage() {
+  let aboutText  = DEFAULT_ABOUT;
+  let privacyText = DEFAULT_PRIVACY;
+  let policyText  = DEFAULT_POLICY;
+
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data } = await supabase
+      .from("site_settings")
+      .select("key, value")
+      .in("key", ["about_text", "privacy_text", "policy_text"]);
+
+    if (data) {
+      const map = Object.fromEntries(data.map((r: { key: string; value: string }) => [r.key, r.value]));
+      if (map.about_text)   aboutText   = map.about_text;
+      if (map.privacy_text) privacyText = map.privacy_text;
+      if (map.policy_text)  policyText  = map.policy_text;
+    }
+  } catch {
+    // Fall back to defaults if DB not ready
+  }
+
   return (
     <div className="flex flex-col min-h-screen relative overflow-hidden" style={{ backgroundColor: "#120d1f" }}>
       <div className="absolute top-0 left-0 w-80 h-80 rounded-full pointer-events-none" style={{ background: "radial-gradient(circle, #3d0a0a 0%, transparent 70%)", transform: "translate(-40%, -40%)", opacity: 0.7 }} />
@@ -19,31 +47,49 @@ export default function AboutPage() {
             </p>
           </div>
 
+          {/* About text — controlled from admin settings */}
           <div className="rounded-2xl p-8 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
             <h2 className="text-xl font-bold" style={{ color: "#d4860a" }}>What is Omni-Verse?</h2>
-            <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.8 }}>
-              Omni-Verse is a competitive trivia gaming platform designed for teams and groups who love to challenge their knowledge. Inspired by Jeopardy, we bring the excitement of live trivia into a modern, digital format — available in both English and Arabic.
+            <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#e8d5a0", opacity: 0.8 }}>
+              {aboutText}
             </p>
           </div>
 
+          {/* How it works — static */}
           <div className="rounded-2xl p-8 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
             <h2 className="text-xl font-bold" style={{ color: "#d4860a" }}>How It Works</h2>
             <div className="flex flex-col gap-3">
               {[
-                { step: "1", text: "Pick your trivia categories (up to 6)" },
-                { step: "2", text: "Choose solo or team mode (up to 6 teams)" },
-                { step: "3", text: "Name your session and enter the game board" },
-                { step: "4", text: "Answer 36 questions with a 60-second timer each" },
-                { step: "5", text: "Score points — 200, 400, or 600 per question" },
-              ].map((item) => (
-                <div key={item.step} className="flex items-start gap-4">
+                "Pick your trivia categories (up to 6)",
+                "Choose solo or team mode (up to 6 teams)",
+                "Name your session and enter the game board",
+                "Answer questions with a 60-second timer each",
+                "Score points — the higher the question value, the harder it is",
+              ].map((text, i) => (
+                <div key={i} className="flex items-start gap-4">
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-                    {item.step}
+                    {i + 1}
                   </div>
-                  <p className="text-sm pt-1" style={{ color: "#e8d5a0", opacity: 0.8 }}>{item.text}</p>
+                  <p className="text-sm pt-1" style={{ color: "#e8d5a0", opacity: 0.8 }}>{text}</p>
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Privacy */}
+          <div className="rounded-2xl p-8 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+            <h2 className="text-xl font-bold" style={{ color: "#d4860a" }}>Privacy Policy</h2>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#e8d5a0", opacity: 0.8 }}>
+              {privacyText}
+            </p>
+          </div>
+
+          {/* Terms */}
+          <div className="rounded-2xl p-8 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+            <h2 className="text-xl font-bold" style={{ color: "#d4860a" }}>Terms of Use</h2>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "#e8d5a0", opacity: 0.8 }}>
+              {policyText}
+            </p>
           </div>
 
           <div className="text-center">
