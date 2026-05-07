@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     const { email, username } = await request.json() as { email: string; username: string };
 
     const { error } = await resend.emails.send({
-      from: "Omni-Verse <noreply@omni-verse.com>",
+      from: "Omni-Verse <onboarding@resend.dev>",
       to: email,
       subject: "Welcome to Omni-Verse! 🎉",
       html: `
@@ -26,11 +26,11 @@ export async function POST(request: NextRequest) {
 
           <p style="line-height:1.6;font-size:14px;color:#e8d5a066;">Each coin lets you select one category in the Arena. Head to the arena and start playing!</p>
 
-          <a href="https://omni-verse.com/arena" style="display:inline-block;background:#d4860a;color:#120d1f;font-weight:bold;padding:12px 28px;border-radius:9999px;text-decoration:none;margin-top:16px;">
+          <a href="https://omni-verse.vercel.app/arena" style="display:inline-block;background:#d4860a;color:#120d1f;font-weight:bold;padding:12px 28px;border-radius:9999px;text-decoration:none;margin-top:16px;">
             Enter the Arena →
           </a>
 
-          <p style="margin-top:40px;font-size:12px;color:#e8d5a033;">You're receiving this because you signed up at omni-verse.com</p>
+          <p style="margin-top:40px;font-size:12px;color:#e8d5a033;">You're receiving this because you signed up at Omni-Verse</p>
         </div>
       `,
     });
