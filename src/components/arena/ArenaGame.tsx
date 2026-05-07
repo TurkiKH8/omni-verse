@@ -84,15 +84,17 @@ async function saveSession(name: string, mode: GameMode, categories: string[], t
 
 // ─── No Coins Banner ──────────────────────────────────────────────────────────
 
-function NoCoinsBanner({ onDismiss }: { onDismiss: () => void }) {
+function NoCoinsBanner({ coins, onDismiss }: { coins: number; onDismiss: () => void }) {
   return (
-    <div className="fixed top-4 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+    <div className="fixed bottom-6 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
       <div className="flex items-center gap-3 px-5 py-3 rounded-2xl shadow-xl pointer-events-auto"
         style={{ backgroundColor: "#1e1530", border: "1px solid #d4860a", maxWidth: 480 }}>
         <span className="text-2xl">🪙</span>
         <p className="text-sm flex-1" style={{ color: "#e8d5a0" }}>
-          You have <strong style={{ color: "#d4860a" }}>0 category coins</strong>. Buy some from{" "}
-          <Link href="/buy" className="font-bold underline" style={{ color: "#d4860a" }}>here</Link>.
+          {coins === 0
+            ? <>You have <strong style={{ color: "#d4860a" }}>0 coins</strong>. Buy some from{" "}<Link href="/buy" className="font-bold underline" style={{ color: "#d4860a" }}>here</Link>.</>
+            : <>Not enough coins to select more. You have <strong style={{ color: "#d4860a" }}>{coins}</strong> coin{coins === 1 ? "" : "s"} — each category costs 1.</>
+          }
         </p>
         <button onClick={onDismiss} className="text-lg leading-none" style={{ color: "#e8d5a0", opacity: 0.5 }}>✕</button>
       </div>
@@ -127,13 +129,13 @@ function StepIndicator({ step }: { step: Step }) {
 
 // ─── Category Select ──────────────────────────────────────────────────────────
 
-function CategorySelect({ selected, hasPurchase, onToggle, onShowNoBanner, onNext }:
-  { selected: string[]; hasPurchase: boolean; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
+function CategorySelect({ selected, coins, onToggle, onShowNoBanner, onNext }:
+  { selected: string[]; coins: number; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
   const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
 
   const handleClick = (cat: string) => {
     if (selected.includes(cat)) { onToggle(cat); return; } // deselect always works
-    if (!hasPurchase) { onShowNoBanner(); return; }        // no coins → banner
+    if (coins <= selected.length) { onShowNoBanner(); return; } // not enough coins
     onToggle(cat);
   };
 
@@ -229,8 +231,8 @@ function GameModeSelect({ gameMode, teamCount, teamNames, onModeChange, onTeamCo
 
 // ─── Session Setup ────────────────────────────────────────────────────────────
 
-function SessionSetup({ sessionName, onChange, onBack, onStart, loading }:
-  { sessionName: string; onChange: (v: string) => void; onBack: () => void; onStart: () => void; loading: boolean }) {
+function SessionSetup({ sessionName, onChange, onBack, onStart, loading, error }:
+  { sessionName: string; onChange: (v: string) => void; onBack: () => void; onStart: () => void; loading: boolean; error?: string | null }) {
   return (
     <div className="flex flex-col gap-6">
       <StepIndicator step="session" />
@@ -238,6 +240,11 @@ function SessionSetup({ sessionName, onChange, onBack, onStart, loading }:
         <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Name Your Session</h2>
         <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>Give this game session a name</p>
       </div>
+      {error && (
+        <div className="px-4 py-3 rounded-xl text-sm text-center" style={{ backgroundColor: "#dc262622", border: "1px solid #dc262644", color: "#f87171" }}>
+          {error}
+        </div>
+      )}
       <div className="flex flex-col gap-2">
         <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Session Name</label>
         <input type="text" placeholder="e.g. Friday Night Trivia" value={sessionName} onChange={(e) => onChange(e.target.value)}
@@ -430,8 +437,10 @@ export default function ArenaGame() {
   const router = useRouter();
 
   const [ready,    setReady]    = useState(false);   // auth check done
-  const [hasPurchase, setHasPurchase] = useState(false);
+  const [coins,       setCoins]       = useState(0);
+  const [userId,      setUserId]      = useState<string | null>(null);
   const [showBanner,  setShowBanner]  = useState(false);
+  const [gameError,   setGameError]   = useState<string | null>(null);
 
   const [step,     setStep]     = useState<Step>("categories");
   const [selectedCategories, setSelected] = useState<string[]>([]);
@@ -455,14 +464,13 @@ export default function ArenaGame() {
         router.replace("/login?next=/arena");
         return;
       }
-      // Check purchases
-      const { data } = await supabase
-        .from("purchases")
-        .select("id")
-        .eq("user_id", session.user.id)
-        .limit(1)
+      setUserId(session.user.id);
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("category_coins")
+        .eq("id", session.user.id)
         .maybeSingle();
-      setHasPurchase(!!data);
+      setCoins(profile?.category_coins ?? 0);
       setReady(true);
     });
   }, [router]);
@@ -477,7 +485,24 @@ export default function ArenaGame() {
   };
 
   const startGame = async () => {
+    setGameError(null);
     setLoadingGame(true);
+
+    if (isSupabaseConfigured && userId) {
+      const res = await fetch("/api/arena/use-coin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, amount: selectedCategories.length }),
+      });
+      const result = await res.json() as { success?: boolean; error?: string; remaining?: number };
+      if (!res.ok || result.error) {
+        setGameError(result.error ?? "Not enough coins to start. Go back and adjust your selection.");
+        setLoadingGame(false);
+        return;
+      }
+      setCoins(result.remaining ?? 0);
+    }
+
     const questionsPerCat = QUESTIONS_PER_CATEGORY[selectedCategories.length] ?? 6;
     const dbBoard  = await fetchBoardFromSupabase(selectedCategories, questionsPerCat);
     const builtBoard = dbBoard ?? buildBoardFromMock(selectedCategories, questionsPerCat);
@@ -538,12 +563,12 @@ export default function ArenaGame() {
 
   return (
     <div className="w-full max-w-3xl mx-auto">
-      {showBanner && <NoCoinsBanner onDismiss={() => setShowBanner(false)} />}
+      {showBanner && <NoCoinsBanner coins={coins} onDismiss={() => setShowBanner(false)} />}
 
       {step === "categories" && (
         <CategorySelect
           selected={selectedCategories}
-          hasPurchase={hasPurchase}
+          coins={coins}
           onToggle={toggleCategory}
           onShowNoBanner={() => setShowBanner(true)}
           onNext={() => setStep("gameMode")}
@@ -557,7 +582,7 @@ export default function ArenaGame() {
       )}
       {step === "session" && (
         <SessionSetup sessionName={sessionName} onChange={setSessionName}
-          onBack={() => setStep("gameMode")} onStart={startGame} loading={loadingGame} />
+          onBack={() => setStep("gameMode")} onStart={startGame} loading={loadingGame} error={gameError} />
       )}
       {step === "board" && board.length > 0 && (
         <GameBoard board={board} teams={teams} gameMode={gameMode} sessionName={sessionName}

@@ -62,7 +62,7 @@ export default function QuestionsPage() {
       const { data: rankPerms } = await supabase
         .from("rank_permissions")
         .select("can_add_question, can_remove_question, can_bulk_add_questions, can_bulk_remove_questions, can_hide_questions")
-        .eq("rank", profile.rank ?? "Omni 1")
+        .eq("rank", profile.rank ?? "Default")
         .maybeSingle();
       if (rankPerms) {
         setPerms({

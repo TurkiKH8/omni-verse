@@ -129,7 +129,7 @@ export default function RanksPage() {
                           border: "1px solid #e8d5a022",
                         }}
                       >
-                        Default — not visible to customers
+                        Entry-level staff
                       </span>
                     )}
                     {rankPerm.rank === "Master Omni" && (
@@ -181,8 +181,8 @@ export default function RanksPage() {
           <p className="text-xs leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.5 }}>
             <span style={{ color: "#d4860a", opacity: 1, fontWeight: 700 }}>Note: </span>
             Full Admins (the is_admin flag) always have every permission regardless of rank settings.
-            Omni 1 is the default rank assigned to all new customers and is never displayed in the front-end.
-            Ranks from Omni 2 upward are visible in the admin portal only.
+            <strong style={{ color: "#e8d5a0", opacity: 1 }}>Default</strong> is the rank assigned to all new customers — they can only access the front-end (arena) and cannot enter the admin portal.
+            Omni 1 through Master Omni are staff ranks for admin portal access only.
           </p>
         </div>
       </div>

@@ -15,7 +15,7 @@ type Customer = {
   created_at: string;
 };
 
-const RANKS = ["Omni 1", "Omni 2", "Omni 3", "Master Omni"];
+const RANKS = ["Default", "Omni 1", "Omni 2", "Omni 3", "Master Omni"];
 
 function getSuccessMsg(type: string): string {
   const msgs: Record<string, string> = {

@@ -17,6 +17,7 @@ export default function Navbar() {
   const router   = useRouter();
   const [menuOpen,   setMenuOpen]   = useState(false);
   const [username,   setUsername]   = useState<string | null>(null);
+  const [coins,      setCoins]      = useState<number | null>(null);
   const [authReady,  setAuthReady]  = useState(false);
 
   useEffect(() => {
@@ -25,10 +26,11 @@ export default function Navbar() {
     const loadUser = async (userId: string, email: string | undefined) => {
       const { data } = await supabase
         .from("profiles")
-        .select("username")
+        .select("username, category_coins")
         .eq("id", userId)
         .maybeSingle();
       setUsername(data?.username || email?.split("@")[0] || "User");
+      setCoins(data?.category_coins ?? 0);
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -81,6 +83,12 @@ export default function Navbar() {
         {authReady && (
           username ? (
             <div className="flex items-center gap-4">
+              {coins !== null && (
+                <span className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-bold"
+                  style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>
+                  🪙 {coins}
+                </span>
+              )}
               <span className="text-sm" style={{ color: "#e8d5a0" }}>
                 Hi,{" "}
                 <span className="font-bold" style={{ color: "#d4860a" }}>{username}</span>
@@ -130,9 +138,17 @@ export default function Navbar() {
           {authReady && (
             username ? (
               <div className="flex flex-col gap-3 mt-2">
-                <p className="text-sm" style={{ color: "#e8d5a0" }}>
-                  Hi, <span className="font-bold" style={{ color: "#d4860a" }}>{username}</span>
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm" style={{ color: "#e8d5a0" }}>
+                    Hi, <span className="font-bold" style={{ color: "#d4860a" }}>{username}</span>
+                  </p>
+                  {coins !== null && (
+                    <span className="flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold"
+                      style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>
+                      🪙 {coins}
+                    </span>
+                  )}
+                </div>
                 <button onClick={() => { setMenuOpen(false); handleSignOut(); }}
                   className="w-full text-center px-4 py-2 rounded-full text-sm font-medium"
                   style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>

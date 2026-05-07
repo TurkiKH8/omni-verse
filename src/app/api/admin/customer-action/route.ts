@@ -65,13 +65,19 @@ export async function POST(request: NextRequest) {
           .from("profiles")
           .select("category_coins")
           .eq("id", userId)
-          .single();
+          .maybeSingle();
         const current = (data?.category_coins as number) ?? 0;
         const add = parseInt(value ?? "0");
-        await adminClient
-          .from("profiles")
-          .update({ category_coins: current + add })
-          .eq("id", userId);
+        if (data) {
+          await adminClient
+            .from("profiles")
+            .update({ category_coins: current + add })
+            .eq("id", userId);
+        } else {
+          await adminClient
+            .from("profiles")
+            .insert({ id: userId, category_coins: add, rank: "Default" });
+        }
         return NextResponse.json({ success: true });
       }
 
