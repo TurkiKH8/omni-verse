@@ -11,6 +11,7 @@ const DEFAULTS = {
   policy_text:   "By using Omni-Verse, you agree to play fair and not abuse the platform. Any attempt to exploit the system may result in account suspension.",
   music_enabled: "true",
   music_volume:  "60",
+  music_url:     "",
 };
 
 export default function SettingsPage() {
@@ -20,6 +21,7 @@ export default function SettingsPage() {
   const [policyText, setPolicyText] = useState(DEFAULTS.policy_text);
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [musicVolume, setMusicVolume]   = useState(60);
+  const [musicUrl, setMusicUrl]         = useState("");
   const [saved, setSaved]     = useState(false);
   const [saving, setSaving]   = useState(false);
   const [loading, setLoading] = useState(true);
@@ -39,6 +41,7 @@ export default function SettingsPage() {
         if (map.policy_text)   setPolicyText(map.policy_text);
         if (map.music_enabled !== undefined) setMusicEnabled(map.music_enabled === "true");
         if (map.music_volume)  setMusicVolume(parseInt(map.music_volume));
+        if (map.music_url !== undefined)    setMusicUrl(map.music_url);
       }
       setLoading(false);
     });
@@ -68,6 +71,7 @@ export default function SettingsPage() {
         { key: "policy_text",   value: policyText },
         { key: "music_enabled", value: String(musicEnabled) },
         { key: "music_volume",  value: String(musicVolume) },
+        { key: "music_url",     value: musicUrl },
       ];
       await supabase.from("site_settings").upsert(rows, { onConflict: "key" });
     }
@@ -210,8 +214,20 @@ export default function SettingsPage() {
                   />
                 </div>
               )}
-              <div className="p-4 rounded-xl" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050" }}>
-                <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.5 }}>Music file upload coming soon.</p>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Audio File URL</label>
+                <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.5 }}>
+                  Paste a direct link to an .mp3 or .ogg file (e.g. from Google Drive, Dropbox, or your own server).
+                  The file must be publicly accessible.
+                </p>
+                <input
+                  type="url"
+                  value={musicUrl}
+                  onChange={(e) => setMusicUrl(e.target.value)}
+                  placeholder="https://example.com/music.mp3"
+                  className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                  style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+                />
               </div>
             </div>
           )}

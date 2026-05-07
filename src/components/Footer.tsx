@@ -12,9 +12,10 @@ export default function Footer() {
           <span className="text-lg font-bold" style={{ color: "#e8d5a0" }}>-Verse</span>
         </div>
         <div className="flex items-center gap-6 text-sm" style={{ color: "#e8d5a0", opacity: 0.6 }}>
-          <Link href="/about" className="hover:opacity-100 transition-opacity">About Us</Link>
-          <Link href="/buy" className="hover:opacity-100 transition-opacity">Buy</Link>
-          <Link href="/admin" className="hover:opacity-100 transition-opacity">Admin</Link>
+          <Link href="/about"   className="hover:opacity-100 transition-opacity">About Us</Link>
+          <Link href="/privacy" className="hover:opacity-100 transition-opacity">Privacy</Link>
+          <Link href="/policy"  className="hover:opacity-100 transition-opacity">Terms</Link>
+          <Link href="/buy"     className="hover:opacity-100 transition-opacity">Buy</Link>
         </div>
         <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.4 }}>
           © {new Date().getFullYear()} Omni-Verse. All rights reserved.
