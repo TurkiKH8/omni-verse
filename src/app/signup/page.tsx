@@ -7,20 +7,40 @@ import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
+function EyeOpen() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+function EyeOff() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+      <line x1="1" y1="1" x2="23" y2="23"/>
+    </svg>
+  );
+}
+
 export default function SignupPage() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  const [name,         setName]         = useState("");
+  const [email,        setEmail]        = useState("");
+  const [password,     setPassword]     = useState("");
+  const [confirm,      setConfirm]      = useState("");
+  const [showPass,     setShowPass]     = useState(false);
+  const [showConfirm,  setShowConfirm]  = useState(false);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState("");
+  const [success,      setSuccess]      = useState(false);
 
   const handleSignup = async () => {
     if (!name || !email || !password) return;
     if (password !== confirm) { setError("Passwords do not match."); return; }
-    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    if (password.length < 6)  { setError("Password must be at least 6 characters."); return; }
     setLoading(true);
     setError("");
 
@@ -37,18 +57,22 @@ export default function SignupPage() {
     });
 
     if (authError) {
-      setError(authError.message);
+      const msg = authError.message.toLowerCase();
+      if (msg.includes("confirmation") || msg.includes("sending") || msg.includes("email")) {
+        setError("Signup failed: the platform email service is not configured. Please contact the administrator.");
+      } else {
+        setError(authError.message);
+      }
       setLoading(false);
       return;
     }
 
-    // Send welcome email via Resend (fire and forget — don't block signup on this)
     if (signUpData.user) {
       fetch("/api/email/welcome", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, username: name }),
-      }).catch(() => {/* silently ignore if email fails */});
+      }).catch(() => {});
     }
 
     setSuccess(true);
@@ -64,7 +88,7 @@ export default function SignupPage() {
             <div className="text-5xl">🎉</div>
             <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Account Created!</h2>
             <p className="text-sm" style={{ color: "#e8d5a0", opacity: 0.65 }}>
-              Welcome to Omni-Verse, <strong style={{ color: "#d4860a" }}>{name}</strong>! You've been gifted <strong style={{ color: "#d4860a" }}>3 free coins</strong> to start playing.
+              Welcome to Omni-Verse, <strong style={{ color: "#d4860a" }}>{name}</strong>! You&apos;ve been gifted <strong style={{ color: "#d4860a" }}>3 free coins</strong> to start playing.
             </p>
             <Link href="/login" className="px-8 py-3 rounded-full font-bold text-sm" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
               Log In Now →
@@ -97,24 +121,82 @@ export default function SignupPage() {
               </div>
             )}
 
-            {[
-              { label: "Full Name", value: name, setter: setName, type: "text", placeholder: "Your name" },
-              { label: "Email", value: email, setter: setEmail, type: "email", placeholder: "you@example.com" },
-              { label: "Password", value: password, setter: setPassword, type: "password", placeholder: "••••••••" },
-              { label: "Confirm Password", value: confirm, setter: setConfirm, type: "password", placeholder: "••••••••" },
-            ].map((field) => (
-              <div key={field.label} className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{field.label}</label>
+            {/* Full Name */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Full Name</label>
+              <input
+                type="text"
+                placeholder="Your name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+              />
+            </div>
+
+            {/* Email */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Email</label>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+              />
+            </div>
+
+            {/* Password */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Password</label>
+              <div className="relative">
                 <input
-                  type={field.type}
-                  placeholder={field.placeholder}
-                  value={field.value}
-                  onChange={(e) => field.setter(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                  type={showPass ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 pr-11 rounded-xl text-sm outline-none"
                   style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPass((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-100"
+                  style={{ color: "#e8d5a0", opacity: 0.45 }}
+                  tabIndex={-1}
+                  aria-label={showPass ? "Hide password" : "Show password"}
+                >
+                  {showPass ? <EyeOff /> : <EyeOpen />}
+                </button>
               </div>
-            ))}
+            </div>
+
+            {/* Confirm Password */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Confirm Password</label>
+              <div className="relative">
+                <input
+                  type={showConfirm ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSignup()}
+                  className="w-full px-4 py-3 pr-11 rounded-xl text-sm outline-none"
+                  style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-100"
+                  style={{ color: "#e8d5a0", opacity: 0.45 }}
+                  tabIndex={-1}
+                  aria-label={showConfirm ? "Hide password" : "Show password"}
+                >
+                  {showConfirm ? <EyeOff /> : <EyeOpen />}
+                </button>
+              </div>
+            </div>
 
             <button
               onClick={handleSignup}
