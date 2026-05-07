@@ -30,7 +30,7 @@ export default function SignupPage() {
       return;
     }
 
-    const { error: authError } = await supabase.auth.signUp({
+    const { data: signUpData, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { full_name: name } },
@@ -38,9 +38,20 @@ export default function SignupPage() {
 
     if (authError) {
       setError(authError.message);
-    } else {
-      setSuccess(true);
+      setLoading(false);
+      return;
     }
+
+    // Send welcome email via Resend (fire and forget — don't block signup on this)
+    if (signUpData.user) {
+      fetch("/api/email/welcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, username: name }),
+      }).catch(() => {/* silently ignore if email fails */});
+    }
+
+    setSuccess(true);
     setLoading(false);
   };
 
@@ -50,13 +61,13 @@ export default function SignupPage() {
         <Navbar />
         <main className="flex-1 flex items-center justify-center px-6 py-16 relative z-10">
           <div className="w-full max-w-md text-center flex flex-col items-center gap-5">
-            <div className="text-5xl">📧</div>
-            <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Check Your Email</h2>
+            <div className="text-5xl">🎉</div>
+            <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Account Created!</h2>
             <p className="text-sm" style={{ color: "#e8d5a0", opacity: 0.65 }}>
-              We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.
+              Welcome to Omni-Verse, <strong style={{ color: "#d4860a" }}>{name}</strong>! You've been gifted <strong style={{ color: "#d4860a" }}>3 free coins</strong> to start playing.
             </p>
             <Link href="/login" className="px-8 py-3 rounded-full font-bold text-sm" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-              Back to Login
+              Log In Now →
             </Link>
           </div>
         </main>
