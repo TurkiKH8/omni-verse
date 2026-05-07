@@ -10,18 +10,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarOpen,    setSidebarOpen]    = useState(false);
   const [isAdmin,        setIsAdmin]        = useState(false);
   const [developerLevel, setDeveloperLevel] = useState<string | null>(null);
+  const [rank,           setRank]           = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
       supabase
         .from("profiles")
-        .select("is_admin, developer_level")
+        .select("is_admin, developer_level, rank")
         .eq("id", user.id)
         .maybeSingle()
         .then(({ data }) => {
           setIsAdmin(data?.is_admin ?? false);
           setDeveloperLevel(data?.developer_level ?? null);
+          setRank(data?.rank ?? null);
         });
     });
   }, []);
@@ -52,6 +54,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           onClose={() => setSidebarOpen(false)}
           isAdmin={isAdmin}
           developerLevel={developerLevel}
+          rank={rank}
         />
       </div>
 

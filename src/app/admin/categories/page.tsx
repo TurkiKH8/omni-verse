@@ -24,6 +24,12 @@ async function logAction(action: string, target: string, type: "create" | "updat
   await supabase.from("audit_log").insert({ action, target, type });
 }
 
+type RankPerms = {
+  canAdd: boolean;
+  canRemove: boolean;
+  canHide: boolean;
+};
+
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>(FALLBACK);
   const [loading, setLoading] = useState(true);
@@ -33,6 +39,40 @@ export default function CategoriesPage() {
   const [formNameAr, setFormNameAr] = useState("");
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [perms, setPerms] = useState<RankPerms>({ canAdd: false, canRemove: false, canHide: false });
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setPerms({ canAdd: true, canRemove: true, canHide: true });
+      return;
+    }
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_admin, rank")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!profile) return;
+      if (profile.is_admin) {
+        setPerms({ canAdd: true, canRemove: true, canHide: true });
+        return;
+      }
+      const { data: rankPerms } = await supabase
+        .from("rank_permissions")
+        .select("can_add_category, can_remove_category, can_hide_categories")
+        .eq("rank", profile.rank ?? "Omni 1")
+        .maybeSingle();
+      if (rankPerms) {
+        setPerms({
+          canAdd:    rankPerms.can_add_category,
+          canRemove: rankPerms.can_remove_category,
+          canHide:   rankPerms.can_hide_categories,
+        });
+      }
+    })();
+  }, []);
 
   const fetchCategories = useCallback(async () => {
     if (!isSupabaseConfigured) { setLoading(false); return; }
@@ -88,6 +128,17 @@ export default function CategoriesPage() {
     }
   };
 
+  const toggleHidden = async (cat: Category) => {
+    const next = !(cat as Category & { is_hidden?: boolean }).is_hidden;
+    if (isSupabaseConfigured) {
+      await supabase.from("categories").update({ is_hidden: next, updated_at: new Date().toISOString() }).eq("id", cat.id);
+      await logAction("Toggled hidden", `${cat.name_en} → ${next ? "HIDDEN" : "VISIBLE"}`, "update");
+      await fetchCategories();
+    } else {
+      setCategories((p) => p.map((c) => c.id === cat.id ? { ...c, is_hidden: next } : c));
+    }
+  };
+
   const toggleActive = async (cat: Category) => {
     const next = !cat.active;
     if (isSupabaseConfigured) {
@@ -110,9 +161,11 @@ export default function CategoriesPage() {
               {!isSupabaseConfigured && <span style={{ color: "#f87171" }}> · Supabase not connected (demo mode)</span>}
             </p>
           </div>
-          <button onClick={openAdd} className="px-5 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-            + Add Category
-          </button>
+          {perms.canAdd && (
+            <button onClick={openAdd} className="px-5 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
+              + Add Category
+            </button>
+          )}
         </div>
 
         <input
@@ -139,9 +192,16 @@ export default function CategoriesPage() {
                   {cat.active ? "Active" : "Off"}
                 </button>
               </div>
-              <div className="flex items-center justify-center gap-2">
+              <div className="flex items-center justify-center gap-2 flex-wrap">
                 <button onClick={() => openEdit(cat)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>Edit</button>
-                <button onClick={() => handleDelete(cat.id, cat.name_en)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#dc262622", color: "#f87171" }}>Del</button>
+                {perms.canHide && (
+                  <button onClick={() => toggleHidden(cat)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: (cat as Category & { is_hidden?: boolean }).is_hidden ? "#0ea5e922" : "#64748b22", color: (cat as Category & { is_hidden?: boolean }).is_hidden ? "#38bdf8" : "#94a3b8" }}>
+                    {(cat as Category & { is_hidden?: boolean }).is_hidden ? "Show" : "Hide"}
+                  </button>
+                )}
+                {perms.canRemove && (
+                  <button onClick={() => handleDelete(cat.id, cat.name_en)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#dc262622", color: "#f87171" }}>Del</button>
+                )}
               </div>
             </div>
           ))}

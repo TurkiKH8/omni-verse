@@ -12,22 +12,25 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { icon: "📊", label: "Dashboard",  href: "/admin/dashboard"  },
-  { icon: "🗂️", label: "Categories", href: "/admin/categories", adminOnly: true },
-  { icon: "❓", label: "Questions",  href: "/admin/questions"  },
-  { icon: "👥", label: "Accounts",   href: "/admin/accounts",  adminOnly: true },
-  { icon: "⚙️", label: "Settings",   href: "/admin/settings",  adminOnly: true },
-  { icon: "👤", label: "Developer",  href: "/admin/developer", adminOnly: true },
-  { icon: "📋", label: "Audit Log",  href: "/admin/audit-log", adminOnly: true },
+  { icon: "📊", label: "Dashboard",          href: "/admin/dashboard"   },
+  { icon: "🗂️", label: "Categories",         href: "/admin/categories", adminOnly: true },
+  { icon: "❓", label: "Questions",           href: "/admin/questions"   },
+  { icon: "👥", label: "Accounts",            href: "/admin/accounts",   adminOnly: true },
+  { icon: "🧑‍💼", label: "Customer Database",  href: "/admin/customers",  adminOnly: true },
+  { icon: "🏅", label: "Ranks",               href: "/admin/ranks",      adminOnly: true },
+  { icon: "⚙️", label: "Settings",            href: "/admin/settings",   adminOnly: true },
+  { icon: "👤", label: "Developer",           href: "/admin/developer",  adminOnly: true },
+  { icon: "📋", label: "Audit Log",           href: "/admin/audit-log",  adminOnly: true },
 ];
 
 interface Props {
   onClose?: () => void;
   isAdmin?: boolean;
   developerLevel?: string | null;
+  rank?: string | null;
 }
 
-export default function AdminSidebar({ onClose, isAdmin = false, developerLevel = null }: Props) {
+export default function AdminSidebar({ onClose, isAdmin = false, developerLevel = null, rank = null }: Props) {
   const pathname = usePathname();
   const router   = useRouter();
 
@@ -42,7 +45,11 @@ export default function AdminSidebar({ onClose, isAdmin = false, developerLevel 
   });
 
   const roleBadge = isAdmin
-    ? { label: "Admin",           color: "#d4860a" }
+    ? { label: rank === "Master Omni" ? "Master Omni" : "Admin", color: "#d4860a" }
+    : developerLevel === "basic" && rank === "Omni 3"
+    ? { label: "Omni 3",          color: "#7c3aed" }
+    : developerLevel === "basic" && rank === "Omni 2"
+    ? { label: "Omni 2",          color: "#0ea5e9" }
     : developerLevel === "basic"
     ? { label: "Basic Developer", color: "#7c3aed" }
     : null;

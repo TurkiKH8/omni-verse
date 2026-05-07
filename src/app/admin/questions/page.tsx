@@ -15,6 +15,14 @@ const FALLBACK: Question[] = [
 
 type FormState = { category: string; points: number; question_en: string; answer_en: string; question_ar: string; answer_ar: string; language: "EN" | "AR" };
 
+type RankPerms = {
+  canAdd: boolean;
+  canRemove: boolean;
+  canBulkAdd: boolean;
+  canBulkRemove: boolean;
+  canHide: boolean;
+};
+
 async function logAction(action: string, target: string, type: "create" | "update" | "delete") {
   if (!isSupabaseConfigured) return;
   await supabase.from("audit_log").insert({ action, target, type });
@@ -31,6 +39,42 @@ export default function QuestionsPage() {
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FormState>({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN" });
+  const [perms, setPerms] = useState<RankPerms>({ canAdd: false, canRemove: false, canBulkAdd: false, canBulkRemove: false, canHide: false });
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setPerms({ canAdd: true, canRemove: true, canBulkAdd: true, canBulkRemove: true, canHide: true });
+      return;
+    }
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_admin, rank")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!profile) return;
+      if (profile.is_admin) {
+        setPerms({ canAdd: true, canRemove: true, canBulkAdd: true, canBulkRemove: true, canHide: true });
+        return;
+      }
+      const { data: rankPerms } = await supabase
+        .from("rank_permissions")
+        .select("can_add_question, can_remove_question, can_bulk_add_questions, can_bulk_remove_questions, can_hide_questions")
+        .eq("rank", profile.rank ?? "Omni 1")
+        .maybeSingle();
+      if (rankPerms) {
+        setPerms({
+          canAdd:        rankPerms.can_add_question,
+          canRemove:     rankPerms.can_remove_question,
+          canBulkAdd:    rankPerms.can_bulk_add_questions,
+          canBulkRemove: rankPerms.can_bulk_remove_questions,
+          canHide:       rankPerms.can_hide_questions,
+        });
+      }
+    })();
+  }, []);
 
   const fetchQuestions = useCallback(async () => {
     if (!isSupabaseConfigured) { setLoading(false); return; }
@@ -139,8 +183,12 @@ export default function QuestionsPage() {
             </p>
           </div>
           <div className="flex gap-3">
-            <button onClick={() => setShowBulk(true)} className="px-4 py-2.5 rounded-full text-sm font-bold" style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa" }}>Bulk Upload</button>
-            <button onClick={openAdd} className="px-5 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>+ Add Question</button>
+            {perms.canBulkAdd && (
+              <button onClick={() => setShowBulk(true)} className="px-4 py-2.5 rounded-full text-sm font-bold" style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa" }}>Bulk Upload</button>
+            )}
+            {perms.canAdd && (
+              <button onClick={openAdd} className="px-5 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>+ Add Question</button>
+            )}
           </div>
         </div>
 
@@ -163,9 +211,27 @@ export default function QuestionsPage() {
               <span className="text-sm font-bold" style={{ color: "#d4860a" }}>{q.points}</span>
               <p className="text-sm leading-snug" style={{ color: "#e8d5a0" }}>{q.question_en}</p>
               <p className="text-xs leading-snug" style={{ color: "#e8d5a0", opacity: 0.65 }}>{q.answer_en}</p>
-              <div className="flex items-center gap-2 justify-center">
+              <div className="flex items-center gap-1.5 justify-center flex-wrap">
                 <button onClick={() => openEdit(q)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>Edit</button>
-                <button onClick={() => handleDelete(q)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#dc262622", color: "#f87171" }}>Del</button>
+                {perms.canHide && (
+                  <button
+                    onClick={async () => {
+                      const hidden = !(q as Question & { is_hidden?: boolean }).is_hidden;
+                      if (isSupabaseConfigured) {
+                        await supabase.from("questions").update({ is_hidden: hidden }).eq("id", q.id);
+                        await logAction("Toggled hidden question", `${q.categories?.name_en} / ${q.points}pts → ${hidden ? "HIDDEN" : "VISIBLE"}`, "update");
+                        await fetchQuestions();
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium"
+                    style={{ backgroundColor: (q as Question & { is_hidden?: boolean }).is_hidden ? "#0ea5e922" : "#64748b22", color: (q as Question & { is_hidden?: boolean }).is_hidden ? "#38bdf8" : "#94a3b8" }}
+                  >
+                    {(q as Question & { is_hidden?: boolean }).is_hidden ? "Show" : "Hide"}
+                  </button>
+                )}
+                {perms.canRemove && (
+                  <button onClick={() => handleDelete(q)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#dc262622", color: "#f87171" }}>Del</button>
+                )}
               </div>
             </div>
           ))}
