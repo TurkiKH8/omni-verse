@@ -129,13 +129,13 @@ function StepIndicator({ step }: { step: Step }) {
 
 // ─── Category Select ──────────────────────────────────────────────────────────
 
-function CategorySelect({ selected, coins, onToggle, onShowNoBanner, onNext }:
-  { selected: string[]; coins: number; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
+function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner, onNext }:
+  { selected: string[]; coins: number; categories: string[]; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
   const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
 
   const handleClick = (cat: string) => {
-    if (selected.includes(cat)) { onToggle(cat); return; } // deselect always works
-    if (coins <= selected.length) { onShowNoBanner(); return; } // not enough coins
+    if (selected.includes(cat)) { onToggle(cat); return; }
+    if (coins <= selected.length) { onShowNoBanner(); return; }
     onToggle(cat);
   };
 
@@ -145,12 +145,12 @@ function CategorySelect({ selected, coins, onToggle, onShowNoBanner, onNext }:
       <div className="text-center">
         <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Pick Your Categories</h2>
         <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>
-          Choose 1–6 categories · {selected.length}/6 selected
+          Choose 1–6 categories · {selected.length}/6 selected · <span style={{ color: "#d4860a" }}>🪙 {coins} coins</span>
           {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} questions each</span>}
         </p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {ALL_CATEGORIES.map((cat) => {
+        {categories.map((cat) => {
           const isSelected = selected.includes(cat);
           const disabled   = !isSelected && selected.length >= 6;
           return (
@@ -436,11 +436,12 @@ function ResultsScreen({ teams, gameMode, soloScore, sessionName, onPlayAgain }:
 export default function ArenaGame() {
   const router = useRouter();
 
-  const [ready,    setReady]    = useState(false);   // auth check done
+  const [ready,       setReady]       = useState(false);
   const [coins,       setCoins]       = useState(0);
   const [userId,      setUserId]      = useState<string | null>(null);
   const [showBanner,  setShowBanner]  = useState(false);
   const [gameError,   setGameError]   = useState<string | null>(null);
+  const [liveCategories, setLiveCategories] = useState<string[]>(ALL_CATEGORIES);
 
   const [step,     setStep]     = useState<Step>("categories");
   const [selectedCategories, setSelected] = useState<string[]>([]);
@@ -457,7 +458,7 @@ export default function ArenaGame() {
 
   // ── Auth + purchase check ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!isSupabaseConfigured) { setReady(true); setHasPurchase(true); return; }
+    if (!isSupabaseConfigured) { setReady(true); setCoins(999); return; }
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
@@ -465,12 +466,15 @@ export default function ArenaGame() {
         return;
       }
       setUserId(session.user.id);
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("category_coins")
-        .eq("id", session.user.id)
-        .maybeSingle();
-      setCoins(profile?.category_coins ?? 0);
+
+      const [profileResult, catsResult] = await Promise.all([
+        supabase.from("profiles").select("category_coins").eq("id", session.user.id).maybeSingle(),
+        supabase.from("categories").select("name_en").eq("active", true).order("name_en"),
+      ]);
+      setCoins(profileResult.data?.category_coins ?? 0);
+      if (catsResult.data && catsResult.data.length > 0) {
+        setLiveCategories(catsResult.data.map((c) => c.name_en));
+      }
       setReady(true);
     });
   }, [router]);
@@ -569,6 +573,7 @@ export default function ArenaGame() {
         <CategorySelect
           selected={selectedCategories}
           coins={coins}
+          categories={liveCategories}
           onToggle={toggleCategory}
           onShowNoBanner={() => setShowBanner(true)}
           onNext={() => setStep("gameMode")}

@@ -9,6 +9,7 @@ interface NavItem {
   label: string;
   href: string;
   adminOnly?: boolean;
+  masterOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -17,7 +18,7 @@ const navItems: NavItem[] = [
   { icon: "❓", label: "Questions",           href: "/admin/questions"   },
   { icon: "👥", label: "Accounts",            href: "/admin/accounts",   adminOnly: true },
   { icon: "🧑‍💼", label: "Customer Database",  href: "/admin/customers",  adminOnly: true },
-  { icon: "🏅", label: "Ranks",               href: "/admin/ranks",      adminOnly: true },
+  { icon: "🏅", label: "Ranks",               href: "/admin/ranks",      adminOnly: true, masterOnly: true },
   { icon: "⚙️", label: "Settings",            href: "/admin/settings",   adminOnly: true },
   { icon: "👤", label: "Developer",           href: "/admin/developer",  adminOnly: true },
   { icon: "📋", label: "Audit Log",           href: "/admin/audit-log",  adminOnly: true },
@@ -40,6 +41,7 @@ export default function AdminSidebar({ onClose, isAdmin = false, developerLevel 
   };
 
   const visible = navItems.filter((item) => {
+    if (item.masterOnly) return rank === "Master Omni";
     if (isAdmin) return true;
     return !item.adminOnly;
   });
