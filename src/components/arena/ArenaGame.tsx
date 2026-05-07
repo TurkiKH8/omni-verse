@@ -3,17 +3,28 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
-import { ALL_CATEGORIES, MOCK_QUESTIONS, POINT_VALUES } from "@/lib/mockQuestions";
+import { ALL_CATEGORIES, MOCK_QUESTIONS } from "@/lib/mockQuestions";
 
 type Step = "categories" | "gameMode" | "session" | "board" | "question" | "answer" | "results";
 type GameMode = "solo" | "team";
 
-interface Team   { id: number; name: string; score: number; }
+interface Team     { id: number; name: string; score: number; }
 interface BoardCell { category: string; points: number; question: string; answer: string; answered: boolean; }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Question count per number of selected categories ─────────────────────────
+const QUESTIONS_PER_CATEGORY: Record<number, number> = {
+  1: 36, 2: 18, 3: 12, 4: 9, 5: 8, 6: 6,
+};
 
-async function fetchBoardFromSupabase(categories: string[]): Promise<BoardCell[][] | null> {
+function getPointValues(questionsPerCat: number): number[] {
+  // Keep the classic Jeopardy values for 6-question boards
+  if (questionsPerCat === 6) return [200, 400, 600, 800, 1000, 1200];
+  return Array.from({ length: questionsPerCat }, (_, i) => (i + 1) * 100);
+}
+
+// ─── Board builders ───────────────────────────────────────────────────────────
+
+async function fetchBoardFromSupabase(categories: string[], questionsPerCat: number): Promise<BoardCell[][] | null> {
   if (!isSupabaseConfigured) return null;
   try {
     const { data: cats } = await supabase
@@ -24,44 +35,52 @@ async function fetchBoardFromSupabase(categories: string[]): Promise<BoardCell[]
 
     const { data: qs } = await supabase
       .from("questions")
-      .select("category_id, points, question_en, answer_en, categories(name_en)")
-      .in("category_id", cats.map((c) => c.id));
+      .select("category_id, points, question_en, answer_en")
+      .in("category_id", cats.map((c) => c.id))
+      .order("points", { ascending: true });
     if (!qs || qs.length === 0) return null;
+
+    const pointValues = getPointValues(questionsPerCat);
 
     return categories.map((catName) => {
       const catRow = cats.find((c) => c.name_en === catName);
-      return POINT_VALUES.map((pv) => {
-        const q = qs.find((x) => x.category_id === catRow?.id && x.points === pv);
-        return {
-          category: catName,
-          points: pv,
-          question: q?.question_en ?? `${catName} – ${pv} pts`,
-          answer:   q?.answer_en   ?? "—",
-          answered: false,
-        };
-      });
+      const catQs  = qs.filter((x) => x.category_id === catRow?.id).slice(0, questionsPerCat);
+      return pointValues.map((pv, idx) => ({
+        category: catName,
+        points:   pv,
+        question: catQs[idx]?.question_en ?? `${catName} – ${pv} pts`,
+        answer:   catQs[idx]?.answer_en   ?? "—",
+        answered: false,
+      }));
     });
   } catch {
     return null;
   }
 }
 
-function buildBoardFromMock(categories: string[]): BoardCell[][] {
+function buildBoardFromMock(categories: string[], questionsPerCat: number): BoardCell[][] {
+  const pointValues = getPointValues(questionsPerCat);
   return categories.map((cat) => {
     const qs = MOCK_QUESTIONS[cat] ?? [];
-    return POINT_VALUES.map((pv) => {
-      const q = qs.find((x) => x.points === pv);
-      return { category: cat, points: pv, question: q?.question ?? `${cat} – ${pv} pts`, answer: q?.answer ?? "—", answered: false };
+    return pointValues.map((pv, idx) => {
+      const q = qs[idx];
+      return {
+        category: cat,
+        points:   pv,
+        question: q?.question ?? `[Mock] ${cat} – question ${idx + 1}`,
+        answer:   q?.answer   ?? "—",
+        answered: false,
+      };
     });
   });
 }
 
-async function saveSession(name: string, mode: GameMode, categories: string[], teams: Team[], soloScore: number) {
+async function saveSession(name: string, mode: GameMode, categories: string[], teams: Team[], soloScore: number, questionsPerCat: number) {
   if (!isSupabaseConfigured) return;
   try {
     const { data: session } = await supabase.from("sessions").insert({
       name, game_mode: mode, category_names: categories,
-      total_questions: categories.length * POINT_VALUES.length,
+      total_questions: categories.length * questionsPerCat,
       completed_at: new Date().toISOString(),
     }).select().single();
 
@@ -74,13 +93,40 @@ async function saveSession(name: string, mode: GameMode, categories: string[], t
   } catch { /* silently skip if DB not ready */ }
 }
 
-// ─── Step Indicator ──────────────────────────────────────────────────────────
+// ─── No Purchase Modal ────────────────────────────────────────────────────────
+
+function NoPurchaseModal() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "#120d1fcc", backdropFilter: "blur(6px)" }}>
+      <div className="w-full max-w-sm rounded-3xl p-8 flex flex-col items-center gap-5 text-center"
+        style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+        <div className="text-5xl">🎯</div>
+        <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>No Categories Yet!</h2>
+        <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.65 }}>
+          You need to purchase at least <strong style={{ color: "#d4860a" }}>1 category</strong> to
+          play in the Arena. Head over to the shop and pick one!
+        </p>
+        <Link href="/buy"
+          className="w-full py-3 rounded-full font-bold text-sm text-center hover:opacity-90"
+          style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
+          Browse Categories
+        </Link>
+        <Link href="/" className="text-sm hover:underline" style={{ color: "#e8d5a0", opacity: 0.45 }}>
+          Back to Home
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step Indicator ───────────────────────────────────────────────────────────
 
 const STEP_LABELS = ["Categories", "Mode", "Session", "Arena"];
-const STEP_MAP: Record<Step, number> = { categories: 0, gameMode: 0, session: 2, board: 3, question: 3, answer: 3, results: 3 };
+const STEP_MAP: Record<Step, number> = { categories: 0, gameMode: 1, session: 2, board: 3, question: 3, answer: 3, results: 3 };
 
 function StepIndicator({ step }: { step: Step }) {
-  const current = step === "gameMode" ? 1 : STEP_MAP[step];
+  const current = STEP_MAP[step];
   return (
     <div className="flex items-center justify-center gap-2 mb-8">
       {STEP_LABELS.map((label, i) => (
@@ -102,12 +148,18 @@ function StepIndicator({ step }: { step: Step }) {
 // ─── Category Select ──────────────────────────────────────────────────────────
 
 function CategorySelect({ selected, onToggle, onNext }: { selected: string[]; onToggle: (c: string) => void; onNext: () => void }) {
+  const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
   return (
     <div className="flex flex-col gap-6">
       <StepIndicator step="categories" />
       <div className="text-center">
         <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Pick Your Categories</h2>
-        <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>Choose 1–6 categories · {selected.length}/6 selected</p>
+        <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>
+          Choose 1–6 categories · {selected.length}/6 selected
+          {selected.length > 0 && (
+            <span style={{ color: "#d4860a" }}> · {questionsPerCat} questions each</span>
+          )}
+        </p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {ALL_CATEGORIES.map((cat) => {
@@ -136,7 +188,7 @@ function CategorySelect({ selected, onToggle, onNext }: { selected: string[]; on
 // ─── Game Mode Select ─────────────────────────────────────────────────────────
 
 function GameModeSelect({ gameMode, teamCount, teamNames, onModeChange, onTeamCountChange, onTeamNameChange, onBack, onNext }:
-  { gameMode: GameMode; teamCount: number; teamNames: string[]; onModeChange: (m: GameMode) => void; onTeamCountChange: (n: number) => void; onTeamNameChange: (i: number, v: string) => void; onBack: () => void; onNext: () => void; }) {
+  { gameMode: GameMode; teamCount: number; teamNames: string[]; onModeChange: (m: GameMode) => void; onTeamCountChange: (n: number) => void; onTeamNameChange: (i: number, v: string) => void; onBack: () => void; onNext: () => void }) {
   return (
     <div className="flex flex-col gap-6">
       <StepIndicator step="gameMode" />
@@ -225,6 +277,8 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
   { board: BoardCell[][]; teams: Team[]; gameMode: GameMode; sessionName: string; onSelectCell: (c: BoardCell) => void; onEndGame: () => void }) {
   const answered = board.flat().filter((c) => c.answered).length;
   const total    = board.flat().length;
+  const rows     = board[0]?.length ?? 0;
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
@@ -232,34 +286,46 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           <h2 className="text-xl font-extrabold" style={{ color: "#e8d5a0" }}>{sessionName}</h2>
           <p className="text-xs mt-0.5" style={{ color: "#e8d5a0", opacity: 0.5 }}>{answered}/{total} answered</p>
         </div>
-        <button onClick={onEndGame} className="px-4 py-2 rounded-full text-xs font-bold" style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed", color: "#a78bfa" }}>End Game</button>
+        <button onClick={onEndGame} className="px-4 py-2 rounded-full text-xs font-bold"
+          style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed", color: "#a78bfa" }}>
+          End Game
+        </button>
       </div>
+
       {gameMode === "team" && teams.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {[...teams].sort((a, b) => b.score - a.score).map((team) => (
-            <div key={team.id} className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+            <div key={team.id} className="flex items-center gap-2 px-3 py-1.5 rounded-full"
+              style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
               <span className="text-xs font-medium" style={{ color: "#e8d5a0" }}>{team.name}</span>
               <span className="text-xs font-bold" style={{ color: "#d4860a" }}>{team.score.toLocaleString()}</span>
             </div>
           ))}
         </div>
       )}
-      <div className="overflow-x-auto">
+
+      <div className="overflow-auto max-h-[70vh]">
         <div className="min-w-max">
+          {/* Category headers */}
           <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(85px, 1fr))` }}>
             {board.map((col) => (
-              <div key={col[0].category} className="px-3 py-3 rounded-xl text-center text-xs font-bold uppercase tracking-wide" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
+              <div key={col[0].category} className="px-3 py-3 rounded-xl text-center text-xs font-bold uppercase tracking-wide sticky top-0"
+                style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
                 {col[0].category}
               </div>
             ))}
           </div>
-          {POINT_VALUES.map((pv, rowIdx) => (
-            <div key={pv} className="grid gap-1.5 mt-1.5" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(85px, 1fr))` }}>
+
+          {/* Question rows */}
+          {Array.from({ length: rows }, (_, rowIdx) => (
+            <div key={rowIdx} className="grid gap-1.5 mt-1.5"
+              style={{ gridTemplateColumns: `repeat(${board.length}, minmax(85px, 1fr))` }}>
               {board.map((col) => {
                 const cell = col[rowIdx];
                 return (
-                  <button key={`${cell.category}-${cell.points}`} onClick={() => !cell.answered && onSelectCell(cell)}
-                    className="py-3 md:py-5 rounded-xl text-center font-extrabold text-sm md:text-lg transition-all"
+                  <button key={`${cell.category}-${cell.points}`}
+                    onClick={() => !cell.answered && onSelectCell(cell)}
+                    className="py-3 md:py-5 rounded-xl text-center font-extrabold text-sm md:text-base transition-all"
                     style={{ backgroundColor: cell.answered ? "#1e153088" : "#1e1530", border: `1px solid ${cell.answered ? "#2e205044" : "#2e2050"}`, color: cell.answered ? "#2e205066" : "#d4860a", cursor: cell.answered ? "default" : "pointer", textDecoration: cell.answered ? "line-through" : "none" }}>
                     {cell.answered ? "—" : cell.points.toLocaleString()}
                   </button>
@@ -277,7 +343,7 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
 
 function QuestionView({ cell, onReveal }: { cell: BoardCell; onReveal: () => void }) {
   const [timeLeft, setTimeLeft] = useState(60);
-  const [expired, setExpired]   = useState(false);
+  const [expired,  setExpired]  = useState(false);
 
   useEffect(() => {
     if (timeLeft <= 0) { setExpired(true); return; }
@@ -395,6 +461,22 @@ export default function ArenaGame() {
   const [soloScore, setSoloScore]           = useState(0);
   const [loadingGame, setLoadingGame]       = useState(false);
   const [sessionSaved, setSessionSaved]     = useState(false);
+  const [hasPurchase, setHasPurchase]       = useState<boolean | null>(null);
+
+  // Check if the user has any purchased categories
+  useEffect(() => {
+    if (!isSupabaseConfigured) { setHasPurchase(true); return; }
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { setHasPurchase(false); return; }
+      const { data } = await supabase
+        .from("purchases")
+        .select("id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      setHasPurchase(!!data);
+    });
+  }, []);
 
   const toggleCategory = useCallback((cat: string) => {
     setSelected((p) => p.includes(cat) ? p.filter((c) => c !== cat) : [...p, cat]);
@@ -407,8 +489,9 @@ export default function ArenaGame() {
 
   const startGame = async () => {
     setLoadingGame(true);
-    const dbBoard = await fetchBoardFromSupabase(selectedCategories);
-    const builtBoard = dbBoard ?? buildBoardFromMock(selectedCategories);
+    const questionsPerCat = QUESTIONS_PER_CATEGORY[selectedCategories.length] ?? 6;
+    const dbBoard   = await fetchBoardFromSupabase(selectedCategories, questionsPerCat);
+    const builtBoard = dbBoard ?? buildBoardFromMock(selectedCategories, questionsPerCat);
     setBoard(builtBoard);
     setTeams(Array.from({ length: teamCount }, (_, i) => ({ id: i, name: teamNames[i] || `Team ${i + 1}`, score: 0 })));
     setSoloScore(0);
@@ -420,13 +503,14 @@ export default function ArenaGame() {
   const handleEndGame = useCallback(async (finalTeams: Team[], finalSoloScore: number) => {
     if (!sessionSaved) {
       setSessionSaved(true);
-      await saveSession(sessionName, gameMode, selectedCategories, finalTeams, finalSoloScore);
+      const questionsPerCat = QUESTIONS_PER_CATEGORY[selectedCategories.length] ?? 6;
+      await saveSession(sessionName, gameMode, selectedCategories, finalTeams, finalSoloScore, questionsPerCat);
     }
     setStep("results");
   }, [sessionSaved, sessionName, gameMode, selectedCategories]);
 
   const handleSelectCell = (cell: BoardCell) => { setCurrentCell(cell); setStep("question"); };
-  const handleReveal = () => setStep("answer");
+  const handleReveal     = () => setStep("answer");
 
   const handleAward = (teamId: number | null) => {
     if (!currentCell) return;
@@ -442,8 +526,7 @@ export default function ArenaGame() {
     const newBoard = board.map((col) => col.map((c) => c.category === currentCell.category && c.points === currentCell.points ? { ...c, answered: true } : c));
     setBoard(newBoard);
     setCurrentCell(null);
-    const allDone = newBoard.flat().every((c) => c.answered);
-    if (allDone) { handleEndGame(newTeams, newSolo); } else { setStep("board"); }
+    if (newBoard.flat().every((c) => c.answered)) { handleEndGame(newTeams, newSolo); } else { setStep("board"); }
   };
 
   const handleNoOne = () => {
@@ -451,8 +534,7 @@ export default function ArenaGame() {
     const newBoard = board.map((col) => col.map((c) => c.category === currentCell.category && c.points === currentCell.points ? { ...c, answered: true } : c));
     setBoard(newBoard);
     setCurrentCell(null);
-    const allDone = newBoard.flat().every((c) => c.answered);
-    if (allDone) { handleEndGame(teams, soloScore); } else { setStep("board"); }
+    if (newBoard.flat().every((c) => c.answered)) { handleEndGame(teams, soloScore); } else { setStep("board"); }
   };
 
   const handlePlayAgain = () => {
@@ -460,8 +542,18 @@ export default function ArenaGame() {
     setBoard([]); setCurrentCell(null); setSoloScore(0); setSessionSaved(false);
   };
 
+  // Still checking purchase status
+  if (hasPurchase === null) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: "#d4860a", borderTopColor: "transparent" }} />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-3xl mx-auto">
+      {!hasPurchase && <NoPurchaseModal />}
       {step === "categories" && <CategorySelect selected={selectedCategories} onToggle={toggleCategory} onNext={() => setStep("gameMode")} />}
       {step === "gameMode"   && <GameModeSelect gameMode={gameMode} teamCount={teamCount} teamNames={teamNames} onModeChange={setGameMode} onTeamCountChange={handleTeamCountChange} onTeamNameChange={(i, v) => setTeamNames((p) => { const u=[...p]; u[i]=v; return u; })} onBack={() => setStep("categories")} onNext={() => setStep("session")} />}
       {step === "session"    && <SessionSetup sessionName={sessionName} onChange={setSessionName} onBack={() => setStep("gameMode")} onStart={startGame} loading={loadingGame} />}

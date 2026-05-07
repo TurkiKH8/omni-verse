@@ -64,18 +64,7 @@ export async function middleware(request: NextRequest) {
       url.searchParams.set("next", "/arena");
       return NextResponse.redirect(url);
     }
-    const { data: purchase } = await supabase
-      .from("purchases")
-      .select("id")
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
-
-    if (!purchase) {
-      const url = new URL("/buy", request.url);
-      url.searchParams.set("reason", "access");
-      return NextResponse.redirect(url);
-    }
+    // Purchase check is handled inside ArenaGame — shows a modal instead of a hard redirect
   }
 
   return response;
