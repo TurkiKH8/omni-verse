@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
     const { email, username } = await request.json() as { email: string; username: string };
 
     const { error } = await resend.emails.send({
-      from: "Omni-Verse <onboarding@resend.dev>",
+      from: "Omni-Verse <noreply@omni-verse.shop>",
       to: email,
       subject: "Welcome to Omni-Verse! 🎉",
       html: `
