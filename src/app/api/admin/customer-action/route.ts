@@ -81,6 +81,22 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
       }
 
+      case "remove_coins": {
+        const { data } = await adminClient
+          .from("profiles")
+          .select("category_coins")
+          .eq("id", userId)
+          .maybeSingle();
+        const current = (data?.category_coins as number) ?? 0;
+        const remove = parseInt(value ?? "0");
+        const newBalance = Math.max(0, current - remove);
+        await adminClient
+          .from("profiles")
+          .update({ category_coins: newBalance })
+          .eq("id", userId);
+        return NextResponse.json({ success: true });
+      }
+
       case "change_rank": {
         await adminClient.from("profiles").update({ rank: value }).eq("id", userId);
         return NextResponse.json({ success: true });

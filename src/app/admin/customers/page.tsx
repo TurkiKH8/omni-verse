@@ -27,6 +27,7 @@ function getSuccessMsg(type: string): string {
     change_phone: "Phone number updated",
     change_display_name: "Display name updated",
     add_coins: "Coins added",
+    remove_coins: "Coins removed",
     change_rank: "Rank updated",
   };
   return msgs[type] ?? "Done";
@@ -38,7 +39,8 @@ function getModalTitle(type: string): string {
     change_email: "Change Email",
     change_phone: "Change Phone Number",
     change_display_name: "Change Display Name",
-    add_coins: "Add Category Coins",
+    add_coins: "Add Coins",
+    remove_coins: "Remove Coins",
     change_rank: "Change Rank",
   };
   return titles[type] ?? "Confirm Action";
@@ -129,7 +131,7 @@ export default function CustomersPage() {
   };
 
   const needsInput = actionModal
-    ? ["change_email", "change_phone", "change_display_name", "add_coins", "change_rank"].includes(actionModal.type)
+    ? ["change_email", "change_phone", "change_display_name", "add_coins", "remove_coins", "change_rank"].includes(actionModal.type)
     : false;
 
   return (
@@ -293,6 +295,9 @@ export default function CustomersPage() {
                   <ActionBtn onClick={() => openModal("add_coins", c, "1")} color="gold" disabled={processing}>
                     +🪙
                   </ActionBtn>
+                  <ActionBtn onClick={() => openModal("remove_coins", c, "1")} color="red" disabled={processing}>
+                    -🪙
+                  </ActionBtn>
                   <ActionBtn onClick={() => openModal("change_rank", c, c.rank)} color="green" disabled={processing}>
                     Rank
                   </ActionBtn>
@@ -355,6 +360,27 @@ export default function CustomersPage() {
               </div>
             )}
 
+            {actionModal.type === "remove_coins" && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>
+                  Number of coins to remove
+                </label>
+                <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.5 }}>
+                  Current balance: <strong style={{ color: "#d4860a" }}>{actionModal.customer.category_coins} 🪙</strong>
+                  {" "}— balance cannot go below 0.
+                </p>
+                <input
+                  type="number"
+                  min="1"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                  style={{ backgroundColor: "#120d1f", border: "1px solid #f8717133", color: "#e8d5a0" }}
+                  autoFocus
+                />
+              </div>
+            )}
+
             {actionModal.type === "change_rank" && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>New Rank</label>
@@ -400,7 +426,7 @@ export default function CustomersPage() {
                 disabled={processing || (needsInput && !inputValue && actionModal?.type !== "change_rank")}
                 className="flex-1 py-2.5 rounded-full text-sm font-bold"
                 style={{
-                  backgroundColor: actionModal.type === "delete" ? "#dc2626" : "#d4860a",
+                  backgroundColor: actionModal.type === "delete" || actionModal.type === "remove_coins" ? "#dc2626" : "#d4860a",
                   color: "#fff",
                   opacity: processing ? 0.5 : 1,
                 }}
