@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
@@ -44,31 +43,26 @@ export default function SignupPage() {
     setLoading(true);
     setError("");
 
-    if (!isSupabaseConfigured) {
-      setError("Supabase is not configured yet. See setup instructions.");
-      setLoading(false);
-      return;
-    }
-
-    const { data: signUpData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: name } },
+    const res = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, full_name: name }),
     });
 
-    if (authError) {
-      setError(authError.message);
+    const result = await res.json();
+
+    if (!res.ok) {
+      setError(result.error || "Something went wrong. Please try again.");
       setLoading(false);
       return;
     }
 
-    if (signUpData.user) {
-      fetch("/api/email/welcome", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, username: name }),
-      }).catch(() => {});
-    }
+    // Fire welcome email in background — non-blocking
+    fetch("/api/email/welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, username: name }),
+    }).catch(() => {});
 
     setSuccess(true);
     setLoading(false);
