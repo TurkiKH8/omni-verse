@@ -57,12 +57,7 @@ export default function SignupPage() {
     });
 
     if (authError) {
-      const msg = authError.message.toLowerCase();
-      if (msg.includes("confirmation") || msg.includes("sending") || msg.includes("email")) {
-        setError("Signup failed: the platform email service is not configured. Please contact the administrator.");
-      } else {
-        setError(authError.message);
-      }
+      setError(authError.message);
       setLoading(false);
       return;
     }
