@@ -58,11 +58,7 @@ export default function SignupPage() {
       return;
     }
 
-    if (result.emailSent) {
-      setCheckEmail(true);
-    } else {
-      setSuccess(true);
-    }
+    setCheckEmail(true);
     setLoading(false);
   };
 
