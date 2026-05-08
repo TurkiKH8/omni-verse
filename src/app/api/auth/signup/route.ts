@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const origin = request.headers.get("origin") ?? "https://omni-verse.shop";
+    const siteUrl = "https://omni-verse.shop";
 
     // Creates the user and returns a confirmation link in one call
     const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       password,
       options: {
         data: { full_name },
-        redirectTo: `${origin}/welcome`,
+        redirectTo: `${siteUrl}/welcome`,
       },
     });
 
