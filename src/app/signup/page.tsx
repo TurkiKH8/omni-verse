@@ -35,6 +35,7 @@ export default function SignupPage() {
   const [loading,      setLoading]      = useState(false);
   const [error,        setError]        = useState("");
   const [success,      setSuccess]      = useState(false);
+  const [checkEmail,   setCheckEmail]   = useState(false);
 
   const handleSignup = async () => {
     if (!name || !email || !password) return;
@@ -57,16 +58,40 @@ export default function SignupPage() {
       return;
     }
 
-    // Fire welcome email in background — non-blocking
-    fetch("/api/email/welcome", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, username: name }),
-    }).catch(() => {});
-
-    setSuccess(true);
+    if (result.emailSent) {
+      setCheckEmail(true);
+    } else {
+      setSuccess(true);
+    }
     setLoading(false);
   };
+
+  if (checkEmail) {
+    return (
+      <div className="flex flex-col min-h-screen relative overflow-hidden" style={{ backgroundColor: "#120d1f" }}>
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-6 py-16 relative z-10">
+          <div className="w-full max-w-md text-center flex flex-col items-center gap-5">
+            <div className="text-5xl">📧</div>
+            <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Check Your Email</h2>
+            <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.65 }}>
+              We sent a confirmation link to{" "}
+              <strong style={{ color: "#d4860a" }}>{email}</strong>.<br />
+              Click it to activate your account and receive your{" "}
+              <strong style={{ color: "#d4860a" }}>3 free coins</strong>.
+            </p>
+            <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.4 }}>
+              Didn&apos;t receive it? Check your spam folder.
+            </p>
+            <Link href="/login" className="px-8 py-3 rounded-full font-bold text-sm" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
+              Go to Log In →
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   if (success) {
     return (
