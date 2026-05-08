@@ -58,6 +58,13 @@ export default function SignupPage() {
       return;
     }
 
+    // Fire welcome email in background — works for verified addresses, silently skips for others
+    fetch("/api/email/welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, username: name }),
+    }).catch(() => {});
+
     setCheckEmail(true);
     setLoading(false);
   };
