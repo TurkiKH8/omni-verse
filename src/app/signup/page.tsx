@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
@@ -43,26 +44,26 @@ export default function SignupPage() {
     setLoading(true);
     setError("");
 
-    const res = await fetch("/api/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, full_name: name }),
+    const { data: signUpData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: name } },
     });
 
-    const result = await res.json();
-
-    if (!res.ok) {
-      setError(result.error || "Something went wrong. Please try again.");
+    if (authError) {
+      setError(authError.message);
       setLoading(false);
       return;
     }
 
     // Fire welcome email in background — non-blocking
-    fetch("/api/email/welcome", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, username: name }),
-    }).catch(() => {});
+    if (signUpData.user) {
+      fetch("/api/email/welcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, username: name }),
+      }).catch(() => {});
+    }
 
     setSuccess(true);
     setLoading(false);
@@ -74,13 +75,15 @@ export default function SignupPage() {
         <Navbar />
         <main className="flex-1 flex items-center justify-center px-6 py-16 relative z-10">
           <div className="w-full max-w-md text-center flex flex-col items-center gap-5">
-            <div className="text-5xl">🎉</div>
-            <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Account Created!</h2>
-            <p className="text-sm" style={{ color: "#e8d5a0", opacity: 0.65 }}>
-              Welcome to Omni-Verse, <strong style={{ color: "#d4860a" }}>{name}</strong>! You&apos;ve been gifted <strong style={{ color: "#d4860a" }}>3 free coins</strong> to start playing.
+            <div className="text-5xl">📧</div>
+            <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Check Your Email</h2>
+            <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.65 }}>
+              We sent a confirmation link to <strong style={{ color: "#d4860a" }}>{email}</strong>.<br />
+              Click it to activate your account, then log in.<br />
+              You&apos;ll also receive <strong style={{ color: "#d4860a" }}>3 free coins</strong> to start playing!
             </p>
             <Link href="/login" className="px-8 py-3 rounded-full font-bold text-sm" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-              Log In Now →
+              Go to Log In →
             </Link>
           </div>
         </main>
