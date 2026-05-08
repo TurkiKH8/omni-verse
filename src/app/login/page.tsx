@@ -56,10 +56,10 @@ function LoginForm() {
       } else {
         setError(authError.message);
       }
+      setLoading(false);
     } else {
-      router.push(next);
+      window.location.href = next;
     }
-    setLoading(false);
   };
 
   return (

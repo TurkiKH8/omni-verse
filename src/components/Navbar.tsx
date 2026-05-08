@@ -31,6 +31,7 @@ export default function Navbar() {
         .maybeSingle();
       setUsername(data?.username || email?.split("@")[0] || "User");
       setCoins(data?.category_coins ?? 0);
+      setAuthReady(true);
     };
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -43,8 +44,9 @@ export default function Navbar() {
         loadUser(session.user.id, session.user.email ?? undefined);
       } else {
         setUsername(null);
+        setCoins(null);
+        setAuthReady(true);
       }
-      setAuthReady(true);
     });
 
     return () => subscription.unsubscribe();

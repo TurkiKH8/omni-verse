@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import "./globals.css";
 import BgMusic from "@/components/BgMusic";
 import AdminButton from "@/components/AdminButton";
+import AfkMonitor from "@/components/AfkMonitor";
 
 const geist = Geist({
   variable: "--font-geist-sans",
@@ -25,6 +26,7 @@ export default function RootLayout({
         {children}
         <BgMusic />
         <AdminButton />
+        <AfkMonitor />
       </body>
     </html>
   );
