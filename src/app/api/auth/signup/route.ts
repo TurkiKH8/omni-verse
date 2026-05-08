@@ -79,9 +79,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (emailError) {
-      // Clean up the created user so they can try again with a fresh signup
       await admin.auth.admin.deleteUser(userId);
-      return NextResponse.json({ error: "Failed to send confirmation email. Please try again." }, { status: 500 });
+      return NextResponse.json({ error: `Email error: ${emailError.message}` }, { status: 500 });
     }
 
     return NextResponse.json({ userId, emailSent: true });
