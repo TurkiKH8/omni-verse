@@ -2,14 +2,20 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { raceWithTimeout, decodeSessionFromStorage } from "@/lib/supabase/withTimeout";
 
 const STAFF_RANKS = ["Omni 1", "Omni 2", "Omni 3", "Master Omni"];
 
 export default function AdminButton() {
+  const pathname = usePathname();
   const [rank,    setRank]    = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
+
+  // Hide entirely inside the admin portal — the sidebar's "Back to Site"
+  // sits at the same bottom-left position and we'd cover it.
+  const onAdminPage = pathname?.startsWith("/admin") ?? false;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -66,7 +72,7 @@ export default function AdminButton() {
     };
   }, []);
 
-  if (!visible) return null;
+  if (!visible || onAdminPage) return null;
 
   const isStaff = rank !== null && STAFF_RANKS.includes(rank);
 
