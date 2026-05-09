@@ -247,10 +247,10 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
               {hasImage && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={cat.image_url!} alt={displayName}
-                  className="w-full h-24 object-cover"
-                  style={{ opacity: disabled ? 0.3 : 1 }} />
+                  className="w-full aspect-[4/5] object-cover"
+                  style={{ opacity: disabled ? 0.3 : 1, backgroundColor: "#0d091a" }} />
               )}
-              <span className="px-4 py-3">
+              <span className="px-4 py-3 block text-center">
                 {isSelected && <span className="mr-2">✓</span>}{displayName}
               </span>
             </button>
@@ -402,15 +402,18 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           minmax(72px,1fr) and horizontal scroll if needed. */}
       {board.length === 1 ? (
         <div className="overflow-auto max-h-[75vh]">
-          <div className="rounded-xl overflow-hidden mb-3"
-            style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
-            {board[0][0].category_image_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={board[0][0].category_image_url} alt=""
-                className="w-full h-32 object-cover" />
-            )}
-            <div className="px-4 py-3 text-center text-sm font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>
-              {labelFor(board[0][0])}
+          <div className="flex justify-center mb-3">
+            <div className="rounded-xl overflow-hidden flex flex-col"
+              style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", width: 160 }}>
+              {board[0][0].category_image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={board[0][0].category_image_url} alt=""
+                  className="w-full aspect-[4/5] object-cover"
+                  style={{ backgroundColor: "#0d091a" }} />
+              )}
+              <div className="px-3 py-2 text-center text-sm font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>
+                {labelFor(board[0][0])}
+              </div>
             </div>
           </div>
           <div className="grid gap-2"
@@ -436,12 +439,13 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
             <div className="grid gap-2"
               style={{ gridTemplateColumns: `repeat(${board.length}, minmax(72px, 1fr))` }}>
               {board.map((col) => (
-                <div key={col[0].category} className="rounded-xl overflow-hidden"
+                <div key={col[0].category} className="rounded-xl overflow-hidden flex flex-col"
                   style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
                   {col[0].category_image_url && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={col[0].category_image_url} alt=""
-                      className="w-full h-16 md:h-20 object-cover" />
+                      className="w-full aspect-[4/5] object-cover"
+                      style={{ backgroundColor: "#0d091a" }} />
                   )}
                   <div className="px-2 py-2 md:px-3 md:py-3 text-center text-xs md:text-sm font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>
                     {labelFor(col[0])}
