@@ -58,12 +58,9 @@ export default function SignupPage() {
       return;
     }
 
-    // Fire welcome email in background — works for verified addresses, silently skips for others
-    fetch("/api/email/welcome", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, username: name }),
-    }).catch(() => {});
+    // Only the confirmation email (sent by /api/auth/signup via Resend)
+    // should reach the inbox. The previous /api/email/welcome trigger
+    // produced a second "Enter the Arena" email — removed.
 
     setCheckEmail(true);
     setLoading(false);
