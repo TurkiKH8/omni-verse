@@ -39,23 +39,13 @@ export async function POST(request: NextRequest) {
 
     const userId = createData.user.id;
 
-    // 2) Generate a magic-link token for the "Confirm My Account" button.
-    //    generateLink with type "magiclink" only creates and returns the
-    //    token — it never sends an email itself.
-    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-      type: "magiclink",
-      email,
-    });
-
-    if (linkError || !linkData.properties?.hashed_token) {
-      await admin.auth.admin.deleteUser(userId);
-      return NextResponse.json({ error: linkError?.message ?? "Could not generate confirmation link." }, { status: 500 });
-    }
-
-    // Route confirmation through our own /auth/confirm endpoint on
-    // omni-verse.shop. It verifies the token_hash via supabase.auth.verifyOtp
-    // and redirects to /welcome with the session installed.
-    const confirmUrl = `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}&type=magiclink&next=${encodeURIComponent("/welcome")}`;
+    // 2) NO generateLink call. The user is already confirmed via createUser
+    //    (email_confirm:true), so they can simply log in. We had been calling
+    //    admin.generateLink({type:"magiclink"}) here, but that admin endpoint
+    //    can — depending on the project's SMTP/auth-hooks config — fire an
+    //    additional email. Removing it entirely guarantees only ONE email
+    //    (the Resend one below) is delivered per signup.
+    const confirmUrl = `${siteUrl}/login`;
     const apiKey = process.env.RESEND_API_KEY;
 
     if (!apiKey) {
