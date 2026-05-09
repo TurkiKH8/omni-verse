@@ -41,36 +41,49 @@ function LoginForm() {
     setLoading(true);
     setError("");
 
-    if (!isSupabaseConfigured) {
-      setError("Supabase is not configured yet.");
-      setLoading(false);
-      return;
-    }
-
-    // If the request hangs for 12 seconds, unblock the button automatically
-    const hangGuard = setTimeout(() => {
-      setLoading(false);
-      setError("Request timed out — please check your connection and try again.");
-    }, 12000);
+    const ctrl = new AbortController();
+    const hangGuard = setTimeout(() => { ctrl.abort(); }, 14000);
 
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      const resp = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        signal: ctrl.signal,
+      });
       clearTimeout(hangGuard);
 
-      if (authError) {
-        const msg = authError.message.toLowerCase();
+      const data = await resp.json() as { access_token?: string; refresh_token?: string; error?: string };
+
+      if (!resp.ok || !data.access_token) {
+        const msg = (data.error || "").toLowerCase();
         if (msg.includes("email not confirmed") || msg.includes("not confirmed")) {
           setError("Please check your email and click the confirmation link before logging in.");
+        } else if (msg.includes("invalid") || msg.includes("credentials")) {
+          setError("Incorrect email or password. Please try again.");
+        } else if (msg.includes("timed out")) {
+          setError("Login is taking too long — please try again in a moment.");
         } else {
-          setError(authError.message);
+          setError(data.error || "Login failed. Please try again.");
         }
         setLoading(false);
-      } else {
-        window.location.href = next;
+        return;
       }
-    } catch {
+
+      await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token!,
+      });
+
+      window.location.href = next;
+    } catch (err: unknown) {
       clearTimeout(hangGuard);
-      setError("Connection error — please check your internet and try again.");
+      const e = err as { name?: string };
+      if (e.name === "AbortError") {
+        setError("Request timed out — please check your connection and try again.");
+      } else {
+        setError("Connection error — please check your internet and try again.");
+      }
       setLoading(false);
     }
   };

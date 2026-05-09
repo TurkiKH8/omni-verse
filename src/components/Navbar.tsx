@@ -22,17 +22,25 @@ export default function Navbar() {
     if (!isSupabaseConfigured) return;
 
     const loadUser = async (userId: string, email: string | undefined) => {
+      // Show fallback immediately so the navbar never sticks on Login/Sign Up
+      const fallbackName = email?.split("@")[0] || "User";
+      setUsername(fallbackName);
+      setCoins(0);
+
       try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 6000);
         const { data } = await supabase
           .from("profiles")
           .select("username, category_coins")
           .eq("id", userId)
+          .abortSignal(ctrl.signal)
           .maybeSingle();
-        setUsername(data?.username || email?.split("@")[0] || "User");
-        setCoins(data?.category_coins ?? 0);
+        clearTimeout(t);
+        if (data?.username) setUsername(data.username);
+        if (typeof data?.category_coins === "number") setCoins(data.category_coins);
       } catch {
-        setUsername(email?.split("@")[0] || "User");
-        setCoins(0);
+        // fallback already set above
       }
     };
 
