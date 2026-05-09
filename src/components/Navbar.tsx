@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useLanguage } from "@/components/LanguageProvider";
 import LanguageToggle from "@/components/LanguageToggle";
+import ProfileEditModal from "@/components/ProfileEditModal";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -13,6 +14,7 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [coins,    setCoins]    = useState<number | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   // Built per-render so labels respond immediately to language changes
   const navLinks = [
@@ -160,9 +162,21 @@ export default function Navbar() {
                 🪙 {coins}
               </span>
             )}
-            <span className="text-sm" style={{ color: "#e8d5a0" }}>
+            <span className="text-sm flex items-center gap-2" style={{ color: "#e8d5a0" }}>
               {t.nav.hi}{" "}
               <span className="font-bold" style={{ color: "#d4860a" }}>{username}</span>
+              <button
+                onClick={() => setProfileOpen(true)}
+                title={t.profile.title}
+                aria-label={t.profile.editAria}
+                className="w-7 h-7 rounded-full flex items-center justify-center transition-opacity hover:opacity-100"
+                style={{ border: "1px solid #2e2050", color: "#e8d5a0", opacity: 0.7, backgroundColor: "#1e1530" }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+              </button>
             </span>
             <button onClick={handleSignOut}
               className="px-5 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-80"
@@ -221,6 +235,16 @@ export default function Navbar() {
                   </span>
                 )}
               </div>
+              <button
+                onClick={() => { setMenuOpen(false); setProfileOpen(true); }}
+                className="w-full text-center px-4 py-2 rounded-full text-sm font-medium flex items-center justify-center gap-2"
+                style={{ border: "1px solid #d4860a", color: "#d4860a" }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+                {t.profile.title}
+              </button>
               <button onClick={() => { setMenuOpen(false); handleSignOut(); }}
                 className="w-full text-center px-4 py-2 rounded-full text-sm font-medium"
                 style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>
@@ -243,6 +267,15 @@ export default function Navbar() {
           )}
         </div>
       )}
+
+      {/* Edit-profile modal — mounted from the navbar so it overlays every page. */}
+      <ProfileEditModal
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        onSaved={(newName) => {
+          if (newName) setUsername(newName);
+        }}
+      />
     </nav>
   );
 }

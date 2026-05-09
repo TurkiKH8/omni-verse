@@ -39,7 +39,20 @@ export async function POST(request: NextRequest) {
 
     const userId = createData.user.id;
 
-    // 2) NO generateLink call. The user is already confirmed via createUser
+    // 2) Make sure profiles.username is set to the typed full_name.
+    //    Supabase usually has an on-auth.users-insert trigger that creates
+    //    the profile row with NULL username. Without this step, the navbar
+    //    falls back to the email prefix on first login. We try update first
+    //    (in case the trigger ran), then insert as backup.
+    try {
+      const upd = await admin.from("profiles").update({ username: full_name }).eq("id", userId).select("id");
+      const updatedRows = (upd.data ?? []).length;
+      if (updatedRows === 0) {
+        await admin.from("profiles").insert({ id: userId, username: full_name });
+      }
+    } catch { /* best-effort; user can edit name from profile modal later */ }
+
+    // 3) NO generateLink call. The user is already confirmed via createUser
     //    (email_confirm:true), so they can simply log in. We had been calling
     //    admin.generateLink({type:"magiclink"}) here, but that admin endpoint
     //    can — depending on the project's SMTP/auth-hooks config — fire an
