@@ -20,27 +20,42 @@ export async function POST(request: NextRequest) {
 
     const siteUrl = "https://omni-verse.shop";
 
-    // Creates the user and returns a confirmation link in one call
-    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
-      type: "signup",
+    // 1) Create the user as already-confirmed. This is the key step that
+    //    prevents Supabase from auto-sending its built-in "Confirm signup"
+    //    email — we want only our custom Resend email to reach the inbox.
+    //    (Previous code used generateLink({type:"signup"}) which both
+    //    creates the user AND triggers Supabase's confirmation mailer,
+    //    producing two emails per signup.)
+    const { data: createData, error: createError } = await admin.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: { full_name },
-        redirectTo: `${siteUrl}/welcome`,
-      },
+      email_confirm: true,
+      user_metadata: { full_name },
     });
 
-    if (linkError) {
-      return NextResponse.json({ error: linkError.message }, { status: 400 });
+    if (createError || !createData.user) {
+      return NextResponse.json({ error: createError?.message ?? "Could not create account." }, { status: 400 });
     }
 
-    const userId = linkData.user.id;
-    // Bypass Supabase's action_link (which uses whatever Site URL is configured
-    // in the Supabase dashboard) and route confirmation through our own domain.
-    // The /auth/confirm route handler verifies the token_hash via verifyOtp and
-    // then redirects to `next` (here: /welcome).
-    const confirmUrl = `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}&type=signup&next=${encodeURIComponent("/welcome")}`;
+    const userId = createData.user.id;
+
+    // 2) Generate a magic-link token for the "Confirm My Account" button.
+    //    generateLink with type "magiclink" only creates and returns the
+    //    token — it never sends an email itself.
+    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+    });
+
+    if (linkError || !linkData.properties?.hashed_token) {
+      await admin.auth.admin.deleteUser(userId);
+      return NextResponse.json({ error: linkError?.message ?? "Could not generate confirmation link." }, { status: 500 });
+    }
+
+    // Route confirmation through our own /auth/confirm endpoint on
+    // omni-verse.shop. It verifies the token_hash via supabase.auth.verifyOtp
+    // and redirects to /welcome with the session installed.
+    const confirmUrl = `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}&type=magiclink&next=${encodeURIComponent("/welcome")}`;
     const apiKey = process.env.RESEND_API_KEY;
 
     if (!apiKey) {
