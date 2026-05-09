@@ -80,8 +80,10 @@ export default function SignupPage() {
               {t.signup.sentLinkB}{" "}
               <strong style={{ color: "#d4860a" }}>{t.signup.freeCoins}</strong>.
             </p>
-            <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.4 }}>
-              {t.signup.checkSpam}
+            <p className="text-sm font-medium px-4 py-2.5 rounded-xl inline-flex items-center gap-2"
+              style={{ backgroundColor: "#d4860a18", border: "1px solid #d4860a55", color: "#e8d5a0" }}>
+              <span aria-hidden="true">📨</span>
+              <span>{t.signup.checkSpam}</span>
             </p>
             <Link href="/login" className="px-8 py-3 rounded-full font-bold text-sm" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
               {t.signup.goLogin}
