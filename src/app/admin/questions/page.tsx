@@ -13,7 +13,23 @@ const FALLBACK: Question[] = [
   { id: "3", category_id: "", points: 200, question_en: "In what year did World War II end?", answer_en: "1945", question_ar: "", answer_ar: "", created_at: "", categories: { name_en: "History", name_ar: "التاريخ" } },
 ];
 
-type FormState = { category: string; points: number; question_en: string; answer_en: string; question_ar: string; answer_ar: string; language: "EN" | "AR" };
+type FormState = { category: string; points: number; question_en: string; answer_en: string; question_ar: string; answer_ar: string; language: "EN" | "AR"; image_url: string | null };
+
+const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg"];
+
+// Uploads a PNG/JPG to the public "images" bucket and returns the public URL.
+// Returns null if the bucket doesn't exist (migration not run) or upload fails.
+async function uploadImageToStorage(file: File, folder: "questions" | "categories"): Promise<string | null> {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return null;
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from("images").upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) return null;
+  return supabase.storage.from("images").getPublicUrl(path).data.publicUrl;
+}
 
 type RankPerms = {
   canAdd: boolean;
@@ -38,7 +54,9 @@ export default function QuestionsPage() {
   const [showBulk, setShowBulk] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<FormState>({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN" });
+  const [form, setForm] = useState<FormState>({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageError, setImageError] = useState<string>("");
   const [perms, setPerms] = useState<RankPerms>({ canAdd: false, canRemove: false, canBulkAdd: false, canBulkRemove: false, canHide: false });
 
   useEffect(() => {
@@ -120,34 +138,60 @@ export default function QuestionsPage() {
     return matchSearch && matchCat;
   });
 
-  const openAdd = () => { setEditId(null); setForm({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN" }); setShowForm(true); };
+  const openAdd = () => {
+    setEditId(null);
+    setForm({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null });
+    setImageFile(null);
+    setImageError("");
+    setShowForm(true);
+  };
   const openEdit = (q: Question) => {
     setEditId(q.id);
-    setForm({ category: q.categories?.name_en ?? "Science", points: q.points, question_en: q.question_en, answer_en: q.answer_en, question_ar: q.question_ar, answer_ar: q.answer_ar, language: "EN" });
+    setForm({ category: q.categories?.name_en ?? "Science", points: q.points, question_en: q.question_en, answer_en: q.answer_en, question_ar: q.question_ar, answer_ar: q.answer_ar, language: "EN", image_url: q.image_url ?? null });
+    setImageFile(null);
+    setImageError("");
     setShowForm(true);
   };
 
   const handleSave = async () => {
     if (!form.question_en.trim() || !form.answer_en.trim()) return;
     setSaving(true);
+    setImageError("");
+
+    // Upload new image first (if user picked one). If upload fails, keep
+    // saving the rest of the question — image is optional.
+    let finalImageUrl: string | null = form.image_url;
+    if (imageFile && isSupabaseConfigured) {
+      const url = await uploadImageToStorage(imageFile, "questions");
+      if (url) {
+        finalImageUrl = url;
+      } else {
+        setImageError("Image upload failed (bucket missing or wrong format). Question saved without image.");
+      }
+    }
 
     if (isSupabaseConfigured) {
       const catId = await getCategoryId(form.category);
       if (!catId) { setSaving(false); return; }
 
-      if (editId) {
-        await supabase.from("questions").update({ category_id: catId, points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: form.question_ar, answer_ar: form.answer_ar }).eq("id", editId);
-        await logAction("Updated question", `${form.category} / ${form.points}pts`, "update");
-      } else {
-        await supabase.from("questions").insert({ category_id: catId, points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: form.question_ar, answer_ar: form.answer_ar });
-        await logAction("Created question", `${form.category} / ${form.points}pts`, "create");
-      }
+      // Try with image_url, fall back to without it if the column doesn't exist
+      const fullPayload = { category_id: catId, points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: form.question_ar, answer_ar: form.answer_ar, image_url: finalImageUrl };
+      const basicPayload = { category_id: catId, points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: form.question_ar, answer_ar: form.answer_ar };
+
+      const trySave = async (payload: Record<string, unknown>) => {
+        if (editId) return supabase.from("questions").update(payload).eq("id", editId);
+        return supabase.from("questions").insert(payload);
+      };
+      const result = await trySave(fullPayload);
+      if (result.error) await trySave(basicPayload);
+
+      await logAction(editId ? "Updated question" : "Created question", `${form.category} / ${form.points}pts`, editId ? "update" : "create");
       await fetchQuestions();
     } else {
       if (editId) {
-        setQuestions((p) => p.map((q) => q.id === editId ? { ...q, points: form.points, question_en: form.question_en, answer_en: form.answer_en, categories: { name_en: form.category, name_ar: "" } } : q));
+        setQuestions((p) => p.map((q) => q.id === editId ? { ...q, points: form.points, question_en: form.question_en, answer_en: form.answer_en, image_url: finalImageUrl, categories: { name_en: form.category, name_ar: "" } } : q));
       } else {
-        setQuestions((p) => [...p, { id: String(Date.now()), category_id: "", points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: "", answer_ar: "", created_at: "", categories: { name_en: form.category, name_ar: "" } }]);
+        setQuestions((p) => [...p, { id: String(Date.now()), category_id: "", points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: "", answer_ar: "", image_url: finalImageUrl, created_at: "", categories: { name_en: form.category, name_ar: "" } }]);
       }
     }
     setSaving(false);
@@ -295,6 +339,37 @@ export default function QuestionsPage() {
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Answer (Arabic) <span style={{ opacity: 0.4 }}>optional</span></label>
               <input type="text" value={form.answer_ar} onChange={(e) => setForm({ ...form, answer_ar: e.target.value })} className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", direction: "rtl" }} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Question Image <span style={{ opacity: 0.4 }}>optional · PNG / JPG</span></label>
+              {(imageFile || form.image_url) && (
+                <div className="relative w-full rounded-xl overflow-hidden" style={{ border: "1px solid #2e2050", backgroundColor: "#120d1f" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url ?? ""} alt="" className="w-full max-h-40 object-contain" />
+                  <button type="button" onClick={() => { setImageFile(null); setForm({ ...form, image_url: null }); }}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center"
+                    style={{ backgroundColor: "#dc2626", color: "#fff" }}
+                    aria-label="Remove image">×</button>
+                </div>
+              )}
+              <input type="file"
+                accept="image/png,image/jpeg,image/jpg"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setImageError("");
+                  if (f && !ALLOWED_IMAGE_TYPES.includes(f.type)) {
+                    setImageError("Only PNG, JPEG or JPG files are allowed.");
+                    setImageFile(null);
+                    return;
+                  }
+                  setImageFile(f);
+                }}
+                className="text-xs file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:cursor-pointer"
+                style={{ color: "#e8d5a0" }}
+              />
+              {imageError && (
+                <p className="text-xs" style={{ color: "#f87171" }}>{imageError}</p>
+              )}
             </div>
             <div className="flex gap-3 mt-2">
               <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>Cancel</button>

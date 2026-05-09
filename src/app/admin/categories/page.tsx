@@ -24,6 +24,21 @@ async function logAction(action: string, target: string, type: "create" | "updat
   await supabase.from("audit_log").insert({ action, target, type });
 }
 
+const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg"];
+
+// Uploads a PNG/JPG to the public "images" bucket; returns the public URL or null.
+async function uploadImageToStorage(file: File): Promise<string | null> {
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return null;
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const path = `categories/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from("images").upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) return null;
+  return supabase.storage.from("images").getPublicUrl(path).data.publicUrl;
+}
+
 type RankPerms = {
   canAdd: boolean;
   canRemove: boolean;
@@ -37,6 +52,9 @@ export default function CategoriesPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formNameAr, setFormNameAr] = useState("");
+  const [formImageUrl, setFormImageUrl] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageError, setImageError] = useState<string>("");
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [perms, setPerms] = useState<RankPerms>({ canAdd: false, canRemove: false, canHide: false });
@@ -90,27 +108,51 @@ export default function CategoriesPage() {
     (c) => c.name_en.toLowerCase().includes(search.toLowerCase()) || c.name_ar.includes(search)
   );
 
-  const openAdd = () => { setEditId(null); setFormName(""); setFormNameAr(""); setShowForm(true); };
-  const openEdit = (cat: Category) => { setEditId(cat.id); setFormName(cat.name_en); setFormNameAr(cat.name_ar); setShowForm(true); };
+  const openAdd = () => {
+    setEditId(null); setFormName(""); setFormNameAr("");
+    setFormImageUrl(null); setImageFile(null); setImageError("");
+    setShowForm(true);
+  };
+  const openEdit = (cat: Category) => {
+    setEditId(cat.id); setFormName(cat.name_en); setFormNameAr(cat.name_ar);
+    setFormImageUrl(cat.image_url ?? null); setImageFile(null); setImageError("");
+    setShowForm(true);
+  };
 
   const handleSave = async () => {
     if (!formName.trim()) return;
     setSaving(true);
+    setImageError("");
+
+    let finalImageUrl: string | null = formImageUrl;
+    if (imageFile && isSupabaseConfigured) {
+      const url = await uploadImageToStorage(imageFile);
+      if (url) finalImageUrl = url;
+      else setImageError("Image upload failed (bucket missing or wrong format). Category saved without new image.");
+    }
 
     if (isSupabaseConfigured) {
-      if (editId) {
-        await supabase.from("categories").update({ name_en: formName, name_ar: formNameAr, updated_at: new Date().toISOString() }).eq("id", editId);
-        await logAction("Updated category", formName, "update");
-      } else {
-        await supabase.from("categories").insert({ name_en: formName, name_ar: formNameAr, active: true, question_count: 0 });
-        await logAction("Created category", formName, "create");
-      }
+      const fullPayload: Record<string, unknown> = editId
+        ? { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, updated_at: new Date().toISOString() }
+        : { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, active: true, question_count: 0 };
+      const basicPayload: Record<string, unknown> = editId
+        ? { name_en: formName, name_ar: formNameAr, updated_at: new Date().toISOString() }
+        : { name_en: formName, name_ar: formNameAr, active: true, question_count: 0 };
+
+      const trySave = async (payload: Record<string, unknown>) => {
+        if (editId) return supabase.from("categories").update(payload).eq("id", editId);
+        return supabase.from("categories").insert(payload);
+      };
+      const result = await trySave(fullPayload);
+      if (result.error) await trySave(basicPayload);
+
+      await logAction(editId ? "Updated category" : "Created category", formName, editId ? "update" : "create");
       await fetchCategories();
     } else {
       if (editId) {
-        setCategories((p) => p.map((c) => c.id === editId ? { ...c, name_en: formName, name_ar: formNameAr } : c));
+        setCategories((p) => p.map((c) => c.id === editId ? { ...c, name_en: formName, name_ar: formNameAr, image_url: finalImageUrl } : c));
       } else {
-        setCategories((p) => [...p, { id: String(Date.now()), name_en: formName, name_ar: formNameAr, active: true, question_count: 0, created_at: "", updated_at: "" }]);
+        setCategories((p) => [...p, { id: String(Date.now()), name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, active: true, question_count: 0, created_at: "", updated_at: "" }]);
       }
     }
 
@@ -223,6 +265,37 @@ export default function CategoriesPage() {
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Name (Arabic)</label>
               <input type="text" value={formNameAr} onChange={(e) => setFormNameAr(e.target.value)} placeholder="مثال: العلوم" className="w-full px-4 py-3 rounded-xl text-sm outline-none text-right" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", direction: "rtl" }} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Cover Image <span style={{ opacity: 0.4 }}>optional · PNG / JPG</span></label>
+              {(imageFile || formImageUrl) && (
+                <div className="relative w-full rounded-xl overflow-hidden" style={{ border: "1px solid #2e2050", backgroundColor: "#120d1f" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imageFile ? URL.createObjectURL(imageFile) : formImageUrl ?? ""} alt="" className="w-full max-h-32 object-cover" />
+                  <button type="button" onClick={() => { setImageFile(null); setFormImageUrl(null); }}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center"
+                    style={{ backgroundColor: "#dc2626", color: "#fff" }}
+                    aria-label="Remove image">×</button>
+                </div>
+              )}
+              <input type="file"
+                accept="image/png,image/jpeg,image/jpg"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setImageError("");
+                  if (f && !ALLOWED_IMAGE_TYPES.includes(f.type)) {
+                    setImageError("Only PNG, JPEG or JPG files are allowed.");
+                    setImageFile(null);
+                    return;
+                  }
+                  setImageFile(f);
+                }}
+                className="text-xs file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:cursor-pointer"
+                style={{ color: "#e8d5a0" }}
+              />
+              {imageError && (
+                <p className="text-xs" style={{ color: "#f87171" }}>{imageError}</p>
+              )}
             </div>
             <div className="flex gap-3 mt-2">
               <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>Cancel</button>

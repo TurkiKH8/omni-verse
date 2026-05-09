@@ -10,11 +10,24 @@ type Step = "categories" | "gameMode" | "session" | "board" | "question" | "answ
 type GameMode = "solo" | "team";
 
 interface Team      { id: number; name: string; score: number; }
-interface BoardCell { category: string; points: number; question: string; answer: string; answered: boolean; }
+interface BoardCell { category: string; points: number; question: string; answer: string; answered: boolean; image_url?: string | null; }
+interface CategoryOption { name: string; image_url?: string | null; }
 
 const QUESTIONS_PER_CATEGORY: Record<number, number> = {
-  1: 36, 2: 18, 3: 12, 4: 9, 5: 8, 6: 6,
+  1: 24, 2: 12, 3: 8, 4: 6, 5: 5, 6: 4,
 };
+
+// Subtle border-color tint based on a cell's relative difficulty (0 = easiest).
+// Background stays consistent so the grid still reads as one cohesive board.
+function difficultyBorderColor(rowIdx: number, totalRows: number, answered: boolean): string {
+  if (answered) return "#2e205044";
+  const t = totalRows > 1 ? rowIdx / (totalRows - 1) : 0.5;
+  if (t < 0.20) return "#4ade8055"; // very easy — green
+  if (t < 0.45) return "#fbbf2466"; // easy   — yellow
+  if (t < 0.65) return "#d4860a77"; // medium — amber (current)
+  if (t < 0.85) return "#fb923c88"; // hard   — orange
+  return "#ef444499";               // brutal — red
+}
 
 function getPointValues(questionsPerCat: number): number[] {
   if (questionsPerCat === 6) return [200, 400, 600, 800, 1000, 1200];
@@ -25,6 +38,14 @@ function shuffle<T>(arr: T[]): T[] {
   return [...arr].sort(() => Math.random() - 0.5);
 }
 
+type DBQuestion = {
+  category_id: string;
+  points: number;
+  question_en: string;
+  answer_en: string;
+  image_url?: string | null;
+};
+
 async function fetchBoardFromSupabase(categories: string[], questionsPerCat: number): Promise<BoardCell[][] | null> {
   if (!isSupabaseConfigured) return null;
   try {
@@ -32,11 +53,25 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
       .from("categories").select("id, name_en").in("name_en", categories);
     if (!cats || cats.length === 0) return null;
 
-    const { data: qs } = await supabase
+    // Try to select with image_url first; if the column doesn't exist yet
+    // (SQL migration not run), fall back to the original column set so the
+    // board still loads.
+    let qs: DBQuestion[] | null = null;
+    const tryFull = await supabase
       .from("questions")
-      .select("category_id, points, question_en, answer_en")
+      .select("category_id, points, question_en, answer_en, image_url")
       .in("category_id", cats.map((c) => c.id))
       .order("points", { ascending: true });
+    if (tryFull.data && !tryFull.error) {
+      qs = tryFull.data as DBQuestion[];
+    } else {
+      const tryBasic = await supabase
+        .from("questions")
+        .select("category_id, points, question_en, answer_en")
+        .in("category_id", cats.map((c) => c.id))
+        .order("points", { ascending: true });
+      qs = (tryBasic.data ?? null) as DBQuestion[] | null;
+    }
     if (!qs || qs.length === 0) return null;
 
     const pointValues = getPointValues(questionsPerCat);
@@ -47,7 +82,7 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
       const catQs  = qs.filter((x) => x.category_id === catRow?.id);
 
       return pointValues.map((pv, idx) => {
-        let picked;
+        let picked: DBQuestion | undefined;
         if (standard6) {
           // Group by matching point value, pick randomly
           const bucket = catQs.filter((q) => q.points === pv);
@@ -63,9 +98,10 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
         }
         return {
           category: catName, points: pv,
-          question: picked?.question_en ?? `${catName} – ${pv} pts`,
-          answer:   picked?.answer_en   ?? "—",
-          answered: false,
+          question:  picked?.question_en ?? `${catName} – ${pv} pts`,
+          answer:    picked?.answer_en   ?? "—",
+          answered:  false,
+          image_url: picked?.image_url   ?? null,
         };
       });
     });
@@ -150,13 +186,13 @@ function StepIndicator({ step }: { step: Step }) {
 // ─── Category Select ──────────────────────────────────────────────────────────
 
 function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner, onNext }:
-  { selected: string[]; coins: number; categories: string[]; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
+  { selected: string[]; coins: number; categories: CategoryOption[]; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
   const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
 
-  const handleClick = (cat: string) => {
-    if (selected.includes(cat)) { onToggle(cat); return; }
+  const handleClick = (catName: string) => {
+    if (selected.includes(catName)) { onToggle(catName); return; }
     if (coins <= selected.length) { onShowNoBanner(); return; }
-    onToggle(cat);
+    onToggle(catName);
   };
 
   return (
@@ -171,13 +207,22 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {categories.map((cat) => {
-          const isSelected = selected.includes(cat);
+          const isSelected = selected.includes(cat.name);
           const disabled   = !isSelected && selected.length >= 6;
+          const hasImage   = !!cat.image_url;
           return (
-            <button key={cat} onClick={() => !disabled && handleClick(cat)}
-              className="px-4 py-4 rounded-2xl text-sm font-semibold text-left transition-all"
+            <button key={cat.name} onClick={() => !disabled && handleClick(cat.name)}
+              className="rounded-2xl text-sm font-semibold text-left transition-all overflow-hidden flex flex-col"
               style={{ backgroundColor: isSelected ? "#d4860a22" : "#1e1530", border: `2px solid ${isSelected ? "#d4860a" : "#2e2050"}`, color: isSelected ? "#d4860a" : disabled ? "#e8d5a033" : "#e8d5a0", cursor: disabled ? "not-allowed" : "pointer" }}>
-              {isSelected && <span className="mr-2">✓</span>}{cat}
+              {hasImage && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={cat.image_url!} alt={cat.name}
+                  className="w-full h-24 object-cover"
+                  style={{ opacity: disabled ? 0.3 : 1 }} />
+              )}
+              <span className="px-4 py-3">
+                {isSelected && <span className="mr-2">✓</span>}{cat.name}
+              </span>
             </button>
           );
         })}
@@ -314,34 +359,71 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           ))}
         </div>
       )}
-      <div className="overflow-auto max-h-[70vh]">
-        <div className="min-w-max">
-          <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${board.length}, minmax(85px, 1fr))` }}>
-            {board.map((col) => (
-              <div key={col[0].category} className="px-3 py-3 rounded-xl text-center text-xs font-bold uppercase tracking-wide"
-                style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
-                {col[0].category}
+      {/* Single-category boards (24 questions) get a wide responsive
+          auto-fit grid so we don't end up with one tall column on desktop.
+          Multi-category boards keep the Jeopardy-style column-per-category
+          layout — but with wider cell minimums so the grid fills the
+          available horizontal space on web. Mobile stays compact via
+          minmax(72px,1fr) and horizontal scroll if needed. */}
+      {board.length === 1 ? (
+        <div className="overflow-auto max-h-[75vh]">
+          <div className="px-4 py-3 rounded-xl text-center text-sm font-bold uppercase tracking-wide mb-3"
+            style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
+            {board[0][0].category}
+          </div>
+          <div className="grid gap-2"
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))" }}>
+            {board[0].map((cell, idx) => (
+              <button key={`${cell.category}-${cell.points}`}
+                onClick={() => !cell.answered && onSelectCell(cell)}
+                className="py-5 md:py-7 rounded-xl text-center font-extrabold text-base md:text-lg transition-all"
+                style={{
+                  backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
+                  border: `2px solid ${difficultyBorderColor(idx, rows, cell.answered)}`,
+                  color: cell.answered ? "#2e205066" : "#d4860a",
+                  cursor: cell.answered ? "default" : "pointer",
+                }}>
+                {cell.answered ? "—" : cell.points.toLocaleString()}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="overflow-auto max-h-[75vh]">
+          <div className="min-w-max">
+            <div className="grid gap-2"
+              style={{ gridTemplateColumns: `repeat(${board.length}, minmax(72px, 1fr))` }}>
+              {board.map((col) => (
+                <div key={col[0].category} className="px-3 py-3 rounded-xl text-center text-xs md:text-sm font-bold uppercase tracking-wide"
+                  style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
+                  {col[0].category}
+                </div>
+              ))}
+            </div>
+            {Array.from({ length: rows }, (_, rowIdx) => (
+              <div key={rowIdx} className="grid gap-2 mt-2"
+                style={{ gridTemplateColumns: `repeat(${board.length}, minmax(72px, 1fr))` }}>
+                {board.map((col) => {
+                  const cell = col[rowIdx];
+                  return (
+                    <button key={`${cell.category}-${cell.points}`}
+                      onClick={() => !cell.answered && onSelectCell(cell)}
+                      className="py-4 md:py-7 rounded-xl text-center font-extrabold text-sm md:text-lg transition-all"
+                      style={{
+                        backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
+                        border: `2px solid ${difficultyBorderColor(rowIdx, rows, cell.answered)}`,
+                        color: cell.answered ? "#2e205066" : "#d4860a",
+                        cursor: cell.answered ? "default" : "pointer",
+                      }}>
+                      {cell.answered ? "—" : cell.points.toLocaleString()}
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>
-          {Array.from({ length: rows }, (_, rowIdx) => (
-            <div key={rowIdx} className="grid gap-1.5 mt-1.5"
-              style={{ gridTemplateColumns: `repeat(${board.length}, minmax(85px, 1fr))` }}>
-              {board.map((col) => {
-                const cell = col[rowIdx];
-                return (
-                  <button key={`${cell.category}-${cell.points}`}
-                    onClick={() => !cell.answered && onSelectCell(cell)}
-                    className="py-3 md:py-5 rounded-xl text-center font-extrabold text-sm md:text-base transition-all"
-                    style={{ backgroundColor: cell.answered ? "#1e153088" : "#1e1530", border: `1px solid ${cell.answered ? "#2e205044" : "#2e2050"}`, color: cell.answered ? "#2e205066" : "#d4860a", cursor: cell.answered ? "default" : "pointer" }}>
-                    {cell.answered ? "—" : cell.points.toLocaleString()}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -519,7 +601,13 @@ function QuestionView({ cell, tickUrl, onReveal, onReport }: { cell: BoardCell; 
         </div>
         <span className="text-3xl font-extrabold tabular-nums" style={{ color: expired ? "#ef4444" : timerColor }}>{expired ? "⏰ Time!" : `${timeLeft}s`}</span>
       </div>
-      <div className="w-full rounded-2xl p-8" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+      <div className="w-full rounded-2xl p-6 md:p-8 flex flex-col gap-4" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+        {cell.image_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={cell.image_url} alt=""
+            className="w-full max-h-72 object-contain rounded-xl"
+            style={{ backgroundColor: "#120d1f" }} />
+        )}
         <p className="text-xl md:text-2xl font-bold leading-snug" style={{ color: "#e8d5a0" }}>{cell.question}</p>
       </div>
       <button onClick={handleReveal} className="px-10 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>Reveal Answer</button>
@@ -544,6 +632,12 @@ function AnswerReveal({ cell, teams, gameMode, onAward, onNoOne, onReport }:
       </div>
       <div className="w-full rounded-2xl p-6" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
         <p className="text-sm mb-4" style={{ color: "#e8d5a0", opacity: 0.55 }}>The question was:</p>
+        {cell.image_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={cell.image_url} alt=""
+            className="w-full max-h-56 object-contain rounded-xl mb-4"
+            style={{ backgroundColor: "#120d1f" }} />
+        )}
         <p className="text-base italic mb-6" style={{ color: "#e8d5a0", opacity: 0.8 }}>{cell.question}</p>
         <div className="h-px mb-6" style={{ backgroundColor: "#2e2050" }} />
         <p className="text-sm mb-2 font-bold" style={{ color: "#d4860a" }}>✓ Correct Answer</p>
@@ -616,7 +710,9 @@ export default function ArenaGame() {
   const [userId,      setUserId]      = useState<string | null>(null);
   const [showBanner,  setShowBanner]  = useState(false);
   const [gameError,   setGameError]   = useState<string | null>(null);
-  const [liveCategories, setLiveCategories] = useState<string[]>(ALL_CATEGORIES);
+  const [liveCategories, setLiveCategories] = useState<CategoryOption[]>(
+    ALL_CATEGORIES.map((name) => ({ name }))
+  );
 
   const [step,     setStep]     = useState<Step>("categories");
   const [selectedCategories, setSelected] = useState<string[]>([]);
@@ -744,7 +840,25 @@ export default function ArenaGame() {
         } catch { return 0; }
       })();
 
-      const categoriesPromise = (async () => {
+      const categoriesPromise = (async (): Promise<CategoryOption[] | null> => {
+        // First try with image_url (post-migration). If that errors because
+        // the column doesn't exist yet, fall back to the basic shape so the
+        // arena still works pre-migration.
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          const full = await supabase
+            .from("categories")
+            .select("name_en, image_url")
+            .eq("active", true)
+            .order("name_en")
+            .abortSignal(ctrl.signal);
+          clearTimeout(t);
+          if (full.data && !full.error) {
+            const arr = full.data as Array<{ name_en: string; image_url?: string | null }>;
+            return arr.length > 0 ? arr.map((c) => ({ name: c.name_en, image_url: c.image_url ?? null })) : null;
+          }
+        } catch { /* fall through */ }
         try {
           const ctrl = new AbortController();
           const t = setTimeout(() => ctrl.abort(), 5000);
@@ -755,7 +869,9 @@ export default function ArenaGame() {
             .order("name_en")
             .abortSignal(ctrl.signal);
           clearTimeout(t);
-          return data && data.length > 0 ? data.map((c) => c.name_en) : null;
+          return data && data.length > 0
+            ? data.map((c) => ({ name: c.name_en as string }))
+            : null;
         } catch { return null; }
       })();
 
@@ -856,8 +972,13 @@ export default function ArenaGame() {
     );
   }
 
+  // The board step gets a wider container on desktop so the grid fills the
+  // viewport. Other steps (categories, mode, session, results) stay centered
+  // and narrow for readability. Mobile is unaffected — max-w-3xl is wider
+  // than mobile viewports anyway.
+  const containerMaxW = step === "board" ? "max-w-6xl" : "max-w-3xl";
   return (
-    <div className="w-full max-w-3xl mx-auto">
+    <div className={`w-full ${containerMaxW} mx-auto`}>
       {showBanner && <NoCoinsBanner coins={coins} onDismiss={() => setShowBanner(false)} />}
       {reportCell && <ReportModal cell={reportCell} onClose={() => setReportCell(null)} />}
 

@@ -38,6 +38,7 @@ export interface Category {
   question_count: number;
   created_at: string;
   updated_at: string;
+  image_url?: string | null;
 }
 
 export interface Question {
@@ -50,6 +51,7 @@ export interface Question {
   answer_ar: string;
   created_at: string;
   categories?: { name_en: string; name_ar: string } | null;
+  image_url?: string | null;
 }
 
 export interface Session {
