@@ -42,9 +42,9 @@ export default function SettingsPage() {
     // Hard 6s timeout so the form is always editable even if queries hang
     const safetyTimer = setTimeout(() => setLoading(false), 6000);
 
-    // Load site settings
-    supabase.from("site_settings").select("key, value")
-      .then(({ data }) => {
+    (async () => {
+      try {
+        const { data } = await supabase.from("site_settings").select("key, value");
         if (data) {
           const map = Object.fromEntries(data.map((r: { key: string; value: string }) => [r.key, r.value]));
           if (map.about_text)    setAboutText(map.about_text);
@@ -56,29 +56,28 @@ export default function SettingsPage() {
           if (map.arena_music_url !== undefined) setArenaMusicUrl(map.arena_music_url);
           if (map.arena_tick_url !== undefined)  setArenaTickUrl(map.arena_tick_url);
         }
-      })
-      .catch(() => { /* keep defaults */ })
-      .finally(() => {
-        clearTimeout(safetyTimer);
-        setLoading(false);
-      });
+      } catch { /* keep defaults */ }
+      clearTimeout(safetyTimer);
+      setLoading(false);
+    })();
 
-    // Load real DB stats — fire-and-forget, never blocks
-    Promise.all([
-      supabase.from("questions").select("id", { count: "exact", head: true }),
-      supabase.from("categories").select("id", { count: "exact", head: true }),
-      supabase.from("sessions").select("id", { count: "exact", head: true }),
-      supabase.from("profiles").select("id", { count: "exact", head: true }),
-    ])
-      .then(([q, c, s, u]) => {
+    // Load DB stats — fire-and-forget, never blocks
+    (async () => {
+      try {
+        const [q, c, s, u] = await Promise.all([
+          supabase.from("questions").select("id", { count: "exact", head: true }),
+          supabase.from("categories").select("id", { count: "exact", head: true }),
+          supabase.from("sessions").select("id", { count: "exact", head: true }),
+          supabase.from("profiles").select("id", { count: "exact", head: true }),
+        ]);
         setStats({
           questions:  q.count  ?? 0,
           categories: c.count  ?? 0,
           sessions:   s.count  ?? 0,
           users:      u.count  ?? 0,
         });
-      })
-      .catch(() => { /* stats stay at 0 */ });
+      } catch { /* stats stay at 0 */ }
+    })();
 
     return () => clearTimeout(safetyTimer);
   }, []);

@@ -78,9 +78,9 @@ export default function DashboardPage() {
         const totalSess   = sessRes.data?.length ?? 0;
 
         setStats({ categories: totalCats, questions: totalQ, sessions: totalSess, activeCategories: activeCats });
-        if (sessRes.data && sessRes.data.length > 0) setSessions(sessRes.data as RecentSession[]);
-        if (recentQRes.data)   setRecentQuestions(recentQRes.data as RecentQuestion[]);
-        if (recentCatRes.data) setRecentCategories(recentCatRes.data as RecentCategory[]);
+        if (sessRes.data && sessRes.data.length > 0) setSessions(sessRes.data as unknown as RecentSession[]);
+        if (recentQRes.data)   setRecentQuestions(recentQRes.data as unknown as RecentQuestion[]);
+        if (recentCatRes.data) setRecentCategories(recentCatRes.data as unknown as RecentCategory[]);
 
         // Build top categories from ALL session data
         const allSessions = allSessRes.data ?? [];
