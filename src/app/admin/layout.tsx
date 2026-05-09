@@ -53,6 +53,37 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "#120d1f" }}>
 
+      {/* Hardcoded fail-safe Back-to-Site button — fixed top-right, always visible.
+          Uses plain <a> for a full browser navigation (most reliable) and inline
+          styles that cannot be overridden by any global CSS. */}
+      <a
+        href="/"
+        title="Back to site"
+        aria-label="Back to site"
+        style={{
+          position: "fixed",
+          top: "14px",
+          right: "14px",
+          zIndex: 60,
+          width: "40px",
+          height: "40px",
+          borderRadius: "9999px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#d4860a",
+          color: "#120d1f",
+          fontSize: "20px",
+          fontWeight: 900,
+          lineHeight: 1,
+          textDecoration: "none",
+          boxShadow: "0 4px 14px rgba(0,0,0,0.45)",
+          border: "1px solid #b06a05",
+        }}
+      >
+        ←
+      </a>
+
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
