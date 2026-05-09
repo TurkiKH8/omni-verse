@@ -24,6 +24,24 @@ interface TopCategory {
   pct: number;
 }
 
+interface RecentQuestion {
+  id: string;
+  question_en: string;
+  answer_en: string;
+  points: number;
+  created_at: string;
+  created_by?: string | null;
+  categories?: { name_en: string } | null;
+}
+
+interface RecentCategory {
+  id: string;
+  name_en: string;
+  name_ar: string;
+  created_at: string;
+  created_by?: string | null;
+}
+
 const FALLBACK_STATS: Stats = { categories: 12, questions: 72, sessions: 0, activeCategories: 7 };
 
 const FALLBACK_SESSIONS: RecentSession[] = [
@@ -36,37 +54,48 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<Stats>(FALLBACK_STATS);
   const [sessions, setSessions] = useState<RecentSession[]>(FALLBACK_SESSIONS);
   const [topCategories, setTopCategories] = useState<TopCategory[]>([]);
+  const [recentQuestions, setRecentQuestions] = useState<RecentQuestion[]>([]);
+  const [recentCategories, setRecentCategories] = useState<RecentCategory[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       if (!isSupabaseConfigured) { setLoading(false); return; }
 
-      const [catRes, qRes, sessRes] = await Promise.all([
-        supabase.from("categories").select("id, active", { count: "exact" }),
-        supabase.from("questions").select("id", { count: "exact" }),
-        supabase.from("sessions").select("id, name, game_mode, category_names, created_at").order("created_at", { ascending: false }).limit(5),
-      ]);
+      try {
+        const [catRes, qRes, sessRes, recentQRes, recentCatRes, allSessRes] = await Promise.all([
+          supabase.from("categories").select("id, active", { count: "exact" }),
+          supabase.from("questions").select("id", { count: "exact" }),
+          supabase.from("sessions").select("id, name, game_mode, category_names, created_at").order("created_at", { ascending: false }).limit(5),
+          supabase.from("questions").select("id, question_en, answer_en, points, created_at, created_by, categories(name_en)").order("created_at", { ascending: false }).limit(5),
+          supabase.from("categories").select("id, name_en, name_ar, created_at, created_by").order("created_at", { ascending: false }).limit(5),
+          supabase.from("sessions").select("category_names"),
+        ]);
 
-      const totalCats   = catRes.count ?? 0;
-      const activeCats  = (catRes.data ?? []).filter((c) => c.active).length;
-      const totalQ      = qRes.count ?? 0;
-      const totalSess   = sessRes.data?.length ?? 0;
+        const totalCats   = catRes.count ?? 0;
+        const activeCats  = (catRes.data ?? []).filter((c) => c.active).length;
+        const totalQ      = qRes.count ?? 0;
+        const totalSess   = sessRes.data?.length ?? 0;
 
-      setStats({ categories: totalCats, questions: totalQ, sessions: totalSess, activeCategories: activeCats });
-      if (sessRes.data && sessRes.data.length > 0) setSessions(sessRes.data as RecentSession[]);
+        setStats({ categories: totalCats, questions: totalQ, sessions: totalSess, activeCategories: activeCats });
+        if (sessRes.data && sessRes.data.length > 0) setSessions(sessRes.data as RecentSession[]);
+        if (recentQRes.data)   setRecentQuestions(recentQRes.data as RecentQuestion[]);
+        if (recentCatRes.data) setRecentCategories(recentCatRes.data as RecentCategory[]);
 
-      // Build top categories from session data
-      const allSessions = sessRes.data ?? [];
-      const counts: Record<string, number> = {};
-      allSessions.forEach((s) => {
-        (s.category_names ?? []).forEach((cat: string) => { counts[cat] = (counts[cat] ?? 0) + 1; });
-      });
-      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6);
-      const max = sorted[0]?.[1] ?? 1;
-      setTopCategories(sorted.map(([name, n]) => ({ name, sessions: n, pct: Math.round((n / max) * 100) })));
-
-      setLoading(false);
+        // Build top categories from ALL session data
+        const allSessions = allSessRes.data ?? [];
+        const counts: Record<string, number> = {};
+        allSessions.forEach((s) => {
+          (s.category_names ?? []).forEach((cat: string) => { counts[cat] = (counts[cat] ?? 0) + 1; });
+        });
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+        const max = sorted[0]?.[1] ?? 1;
+        setTopCategories(sorted.map(([name, n]) => ({ name, sessions: n, pct: Math.round((n / max) * 100) })));
+      } catch {
+        // Keep fallback values
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -170,6 +199,56 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* Last 5 added questions + last 5 added categories */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Last 5 Questions */}
+          <div className="rounded-2xl flex flex-col" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+            <div className="px-6 py-4" style={{ borderBottom: "1px solid #2e2050" }}>
+              <h2 className="font-bold text-sm" style={{ color: "#e8d5a0" }}>Last 5 Added Questions</h2>
+            </div>
+            {recentQuestions.length === 0 ? (
+              <p className="px-6 py-8 text-sm text-center" style={{ color: "#e8d5a0", opacity: 0.35 }}>No questions added yet.</p>
+            ) : (
+              recentQuestions.map((q, i) => (
+                <div key={q.id} className="px-6 py-3 flex flex-col gap-1" style={{ borderTop: i === 0 ? "none" : "1px solid #2e2050" }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
+                      {(q.categories as { name_en: string } | null)?.name_en ?? "—"}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: "#d4860a22", color: "#d4860a" }}>{q.points} pts</span>
+                  </div>
+                  <p className="text-sm font-medium truncate" style={{ color: "#e8d5a0" }}>{q.question_en}</p>
+                  <p className="text-xs truncate" style={{ color: "#4ade80", opacity: 0.8 }}>✓ {q.answer_en}</p>
+                  <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.35 }}>{fmtDate(q.created_at)}{q.created_by ? ` · by ${String(q.created_by).slice(0, 8)}…` : ""}</p>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Last 5 Categories */}
+          <div className="rounded-2xl flex flex-col" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+            <div className="px-6 py-4" style={{ borderBottom: "1px solid #2e2050" }}>
+              <h2 className="font-bold text-sm" style={{ color: "#e8d5a0" }}>Last 5 Added Categories</h2>
+            </div>
+            {recentCategories.length === 0 ? (
+              <p className="px-6 py-8 text-sm text-center" style={{ color: "#e8d5a0", opacity: 0.35 }}>No categories added yet.</p>
+            ) : (
+              recentCategories.map((c, i) => (
+                <div key={c.id} className="px-6 py-3 flex items-center justify-between gap-4" style={{ borderTop: i === 0 ? "none" : "1px solid #2e2050" }}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: "#e8d5a0" }}>{c.name_en}</p>
+                    <p className="text-xs truncate" style={{ color: "#e8d5a0", opacity: 0.45 }}>{c.name_ar}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.4 }}>{fmtDate(c.created_at)}</p>
+                    {c.created_by && <p className="text-xs mt-0.5" style={{ color: "#d4860a", opacity: 0.7 }}>by {String(c.created_by).slice(0, 8)}…</p>}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>

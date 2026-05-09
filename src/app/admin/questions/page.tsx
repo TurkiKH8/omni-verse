@@ -47,43 +47,63 @@ export default function QuestionsPage() {
       return;
     }
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("is_admin, rank")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (!profile) return;
-      if (profile.is_admin) {
-        setPerms({ canAdd: true, canRemove: true, canBulkAdd: true, canBulkRemove: true, canHide: true });
-        return;
-      }
-      const { data: rankPerms } = await supabase
-        .from("rank_permissions")
-        .select("can_add_question, can_remove_question, can_bulk_add_questions, can_bulk_remove_questions, can_hide_questions")
-        .eq("rank", profile.rank ?? "Default")
-        .maybeSingle();
-      if (rankPerms) {
-        setPerms({
-          canAdd:        rankPerms.can_add_question,
-          canRemove:     rankPerms.can_remove_question,
-          canBulkAdd:    rankPerms.can_bulk_add_questions,
-          canBulkRemove: rankPerms.can_bulk_remove_questions,
-          canHide:       rankPerms.can_hide_questions,
-        });
-      }
+      try {
+        // Use 4s timeout for getUser so a hung lock can't block the whole page
+        const userResult = await Promise.race([
+          supabase.auth.getUser(),
+          new Promise<never>((_, r) => setTimeout(() => r(new Error("timeout")), 4000)),
+        ]) as { data: { user: { id: string } | null } };
+        const user = userResult.data.user;
+        if (!user) return;
+
+        const profCtrl = new AbortController();
+        const profT = setTimeout(() => profCtrl.abort(), 5000);
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("is_admin, rank")
+          .eq("id", user.id)
+          .abortSignal(profCtrl.signal)
+          .maybeSingle();
+        clearTimeout(profT);
+        if (!profile) return;
+
+        if (profile.is_admin) {
+          setPerms({ canAdd: true, canRemove: true, canBulkAdd: true, canBulkRemove: true, canHide: true });
+          return;
+        }
+
+        const rankCtrl = new AbortController();
+        const rankT = setTimeout(() => rankCtrl.abort(), 5000);
+        const { data: rankPerms } = await supabase
+          .from("rank_permissions")
+          .select("can_add_question, can_remove_question, can_bulk_add_questions, can_bulk_remove_questions, can_hide_questions")
+          .eq("rank", profile.rank ?? "Default")
+          .abortSignal(rankCtrl.signal)
+          .maybeSingle();
+        clearTimeout(rankT);
+        if (rankPerms) {
+          setPerms({
+            canAdd:        rankPerms.can_add_question,
+            canRemove:     rankPerms.can_remove_question,
+            canBulkAdd:    rankPerms.can_bulk_add_questions,
+            canBulkRemove: rankPerms.can_bulk_remove_questions,
+            canHide:       rankPerms.can_hide_questions,
+          });
+        }
+      } catch { /* keep restrictive defaults */ }
     })();
   }, []);
 
   const fetchQuestions = useCallback(async () => {
     if (!isSupabaseConfigured) { setLoading(false); return; }
-    const { data } = await supabase
-      .from("questions")
-      .select("*, categories(name_en, name_ar)")
-      .order("created_at", { ascending: true });
-    if (data && data.length > 0) setQuestions(data as Question[]);
-    setLoading(false);
+    try {
+      const { data } = await supabase
+        .from("questions")
+        .select("*, categories(name_en, name_ar)")
+        .order("created_at", { ascending: true });
+      if (data && data.length > 0) setQuestions(data as Question[]);
+    } catch { /* keep current questions */ }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { fetchQuestions(); }, [fetchQuestions]);

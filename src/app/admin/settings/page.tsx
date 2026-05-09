@@ -4,14 +4,17 @@ import { useState, useEffect } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 
 type Tab = "about" | "privacy" | "policy" | "music" | "database" | "developers";
+type SeedState = "idle" | "seeding" | "done" | "error";
 
 const DEFAULTS = {
-  about_text:    "Omni-Verse is a competitive trivia gaming platform designed for teams and groups who love to challenge their knowledge. Inspired by Jeopardy, we bring the excitement of live trivia into a modern, digital format — available in both English and Arabic.",
-  privacy_text:  "We respect your privacy. Your personal data is never sold to third parties. We only collect what is necessary to run the platform and keep your account secure.",
-  policy_text:   "By using Omni-Verse, you agree to play fair and not abuse the platform. Any attempt to exploit the system may result in account suspension.",
-  music_enabled: "true",
-  music_volume:  "60",
-  music_url:     "",
+  about_text:       "Omni-Verse is a competitive trivia gaming platform designed for teams and groups who love to challenge their knowledge. Inspired by Jeopardy, we bring the excitement of live trivia into a modern, digital format — available in both English and Arabic.",
+  privacy_text:     "We respect your privacy. Your personal data is never sold to third parties. We only collect what is necessary to run the platform and keep your account secure.",
+  policy_text:      "By using Omni-Verse, you agree to play fair and not abuse the platform. Any attempt to exploit the system may result in account suspension.",
+  music_enabled:    "true",
+  music_volume:     "60",
+  music_url:        "",
+  arena_music_url:  "",
+  arena_tick_url:   "",
 };
 
 export default function SettingsPage() {
@@ -19,12 +22,16 @@ export default function SettingsPage() {
   const [aboutText, setAboutText]   = useState(DEFAULTS.about_text);
   const [privacyText, setPrivacyText] = useState(DEFAULTS.privacy_text);
   const [policyText, setPolicyText] = useState(DEFAULTS.policy_text);
-  const [musicEnabled, setMusicEnabled] = useState(true);
-  const [musicVolume, setMusicVolume]   = useState(60);
-  const [musicUrl, setMusicUrl]         = useState("");
+  const [musicEnabled, setMusicEnabled]     = useState(true);
+  const [musicVolume, setMusicVolume]       = useState(60);
+  const [musicUrl, setMusicUrl]             = useState("");
+  const [arenaMusicUrl, setArenaMusicUrl]   = useState("");
+  const [arenaTickUrl, setArenaTickUrl]     = useState("");
   const [saved, setSaved]     = useState(false);
   const [saving, setSaving]   = useState(false);
   const [loading, setLoading] = useState(true);
+  const [seedState, setSeedState] = useState<SeedState>("idle");
+  const [seedMsg, setSeedMsg]     = useState("");
 
   // DB stats
   const [stats, setStats] = useState({ questions: 0, categories: 0, sessions: 0, users: 0 });
@@ -32,34 +39,48 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!isSupabaseConfigured) { setLoading(false); return; }
 
-    // Load site settings
-    supabase.from("site_settings").select("key, value").then(({ data }) => {
-      if (data) {
-        const map = Object.fromEntries(data.map((r: { key: string; value: string }) => [r.key, r.value]));
-        if (map.about_text)    setAboutText(map.about_text);
-        if (map.privacy_text)  setPrivacyText(map.privacy_text);
-        if (map.policy_text)   setPolicyText(map.policy_text);
-        if (map.music_enabled !== undefined) setMusicEnabled(map.music_enabled === "true");
-        if (map.music_volume)  setMusicVolume(parseInt(map.music_volume));
-        if (map.music_url !== undefined)    setMusicUrl(map.music_url);
-      }
-      setLoading(false);
-    });
+    // Hard 6s timeout so the form is always editable even if queries hang
+    const safetyTimer = setTimeout(() => setLoading(false), 6000);
 
-    // Load real DB stats
+    // Load site settings
+    supabase.from("site_settings").select("key, value")
+      .then(({ data }) => {
+        if (data) {
+          const map = Object.fromEntries(data.map((r: { key: string; value: string }) => [r.key, r.value]));
+          if (map.about_text)    setAboutText(map.about_text);
+          if (map.privacy_text)  setPrivacyText(map.privacy_text);
+          if (map.policy_text)   setPolicyText(map.policy_text);
+          if (map.music_enabled !== undefined)   setMusicEnabled(map.music_enabled === "true");
+          if (map.music_volume)                  setMusicVolume(parseInt(map.music_volume));
+          if (map.music_url !== undefined)       setMusicUrl(map.music_url);
+          if (map.arena_music_url !== undefined) setArenaMusicUrl(map.arena_music_url);
+          if (map.arena_tick_url !== undefined)  setArenaTickUrl(map.arena_tick_url);
+        }
+      })
+      .catch(() => { /* keep defaults */ })
+      .finally(() => {
+        clearTimeout(safetyTimer);
+        setLoading(false);
+      });
+
+    // Load real DB stats — fire-and-forget, never blocks
     Promise.all([
       supabase.from("questions").select("id", { count: "exact", head: true }),
       supabase.from("categories").select("id", { count: "exact", head: true }),
       supabase.from("sessions").select("id", { count: "exact", head: true }),
       supabase.from("profiles").select("id", { count: "exact", head: true }),
-    ]).then(([q, c, s, u]) => {
-      setStats({
-        questions:  q.count  ?? 0,
-        categories: c.count  ?? 0,
-        sessions:   s.count  ?? 0,
-        users:      u.count  ?? 0,
-      });
-    });
+    ])
+      .then(([q, c, s, u]) => {
+        setStats({
+          questions:  q.count  ?? 0,
+          categories: c.count  ?? 0,
+          sessions:   s.count  ?? 0,
+          users:      u.count  ?? 0,
+        });
+      })
+      .catch(() => { /* stats stay at 0 */ });
+
+    return () => clearTimeout(safetyTimer);
   }, []);
 
   const handleSave = async () => {
@@ -69,9 +90,11 @@ export default function SettingsPage() {
         { key: "about_text",    value: aboutText },
         { key: "privacy_text",  value: privacyText },
         { key: "policy_text",   value: policyText },
-        { key: "music_enabled", value: String(musicEnabled) },
-        { key: "music_volume",  value: String(musicVolume) },
-        { key: "music_url",     value: musicUrl },
+        { key: "music_enabled",   value: String(musicEnabled) },
+        { key: "music_volume",    value: String(musicVolume) },
+        { key: "music_url",       value: musicUrl },
+        { key: "arena_music_url", value: arenaMusicUrl },
+        { key: "arena_tick_url",  value: arenaTickUrl },
       ];
       await supabase.from("site_settings").upsert(rows, { onConflict: "key" });
     }
@@ -229,6 +252,34 @@ export default function SettingsPage() {
                   style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
                 />
               </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Arena Background Music URL</label>
+                <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.5 }}>
+                  Music that plays during gameplay in the Arena (separate from site music).
+                </p>
+                <input
+                  type="url"
+                  value={arenaMusicUrl}
+                  onChange={(e) => setArenaMusicUrl(e.target.value)}
+                  placeholder="https://example.com/arena.mp3"
+                  className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                  style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Question Timer Tick Sound URL</label>
+                <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.5 }}>
+                  Ticking/clock sound played during the question countdown timer. Must be a short loopable audio file.
+                </p>
+                <input
+                  type="url"
+                  value={arenaTickUrl}
+                  onChange={(e) => setArenaTickUrl(e.target.value)}
+                  placeholder="https://example.com/tick.mp3"
+                  className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                  style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+                />
+              </div>
             </div>
           )}
 
@@ -247,6 +298,34 @@ export default function SettingsPage() {
                     <p className="text-xs mt-1" style={{ color: "#e8d5a0", opacity: 0.55 }}>{stat.label}</p>
                   </div>
                 ))}
+              </div>
+              <div className="pt-2" style={{ borderTop: "1px solid #2e2050" }}>
+                <h3 className="font-bold text-sm mb-1" style={{ color: "#e8d5a0" }}>Seed Questions Database</h3>
+                <p className="text-xs mb-3" style={{ color: "#e8d5a0", opacity: 0.5 }}>
+                  Insert 150 questions per category into the database. Run this once to populate the question bank. Safe to run again — will not duplicate existing questions.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    disabled={seedState === "seeding"}
+                    onClick={async () => {
+                      setSeedState("seeding");
+                      setSeedMsg("");
+                      try {
+                        const res = await fetch("/api/admin/seed-questions", { method: "POST" });
+                        const data = await res.json() as { inserted?: number; skipped?: number; error?: string };
+                        if (!res.ok) { setSeedState("error"); setSeedMsg(data.error ?? "Unknown error"); }
+                        else { setSeedState("done"); setSeedMsg(`✓ Inserted ${data.inserted ?? 0} questions (${data.skipped ?? 0} already existed)`); }
+                      } catch (e) { setSeedState("error"); setSeedMsg(String(e)); }
+                    }}
+                    className="px-6 py-2.5 rounded-full text-sm font-bold"
+                    style={{ backgroundColor: seedState === "seeding" ? "#2e2050" : "#7c3aed22", border: "1px solid #7c3aed", color: "#a78bfa", opacity: seedState === "seeding" ? 0.5 : 1, cursor: seedState === "seeding" ? "not-allowed" : "pointer" }}
+                  >
+                    {seedState === "seeding" ? "Seeding…" : "🌱 Seed Questions"}
+                  </button>
+                  {seedMsg && (
+                    <span className="text-xs" style={{ color: seedState === "error" ? "#f87171" : "#4ade80" }}>{seedMsg}</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
