@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
@@ -12,7 +12,6 @@ type GameMode = "solo" | "team";
 interface Team      { id: number; name: string; score: number; }
 interface BoardCell { category: string; points: number; question: string; answer: string; answered: boolean; }
 
-// ─── Question count per number of selected categories ─────────────────────────
 const QUESTIONS_PER_CATEGORY: Record<number, number> = {
   1: 36, 2: 18, 3: 12, 4: 9, 5: 8, 6: 6,
 };
@@ -22,7 +21,9 @@ function getPointValues(questionsPerCat: number): number[] {
   return Array.from({ length: questionsPerCat }, (_, i) => (i + 1) * 100);
 }
 
-// ─── Board builders ───────────────────────────────────────────────────────────
+function shuffle<T>(arr: T[]): T[] {
+  return [...arr].sort(() => Math.random() - 0.5);
+}
 
 async function fetchBoardFromSupabase(categories: string[], questionsPerCat: number): Promise<BoardCell[][] | null> {
   if (!isSupabaseConfigured) return null;
@@ -39,15 +40,34 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
     if (!qs || qs.length === 0) return null;
 
     const pointValues = getPointValues(questionsPerCat);
+    const standard6  = questionsPerCat === 6;
+
     return categories.map((catName) => {
       const catRow = cats.find((c) => c.name_en === catName);
-      const catQs  = qs.filter((x) => x.category_id === catRow?.id).slice(0, questionsPerCat);
-      return pointValues.map((pv, idx) => ({
-        category: catName, points: pv,
-        question: catQs[idx]?.question_en ?? `${catName} – ${pv} pts`,
-        answer:   catQs[idx]?.answer_en   ?? "—",
-        answered: false,
-      }));
+      const catQs  = qs.filter((x) => x.category_id === catRow?.id);
+
+      return pointValues.map((pv, idx) => {
+        let picked;
+        if (standard6) {
+          // Group by matching point value, pick randomly
+          const bucket = catQs.filter((q) => q.points === pv);
+          picked = bucket.length > 0
+            ? bucket[Math.floor(Math.random() * bucket.length)]
+            : shuffle(catQs)[idx];
+        } else {
+          // Divide sorted questions into difficulty buckets
+          const sorted     = [...catQs].sort((a, b) => a.points - b.points);
+          const bucketSize = Math.max(1, Math.ceil(sorted.length / questionsPerCat));
+          const bucket     = sorted.slice(idx * bucketSize, (idx + 1) * bucketSize);
+          picked = bucket.length > 0 ? bucket[Math.floor(Math.random() * bucket.length)] : sorted[idx];
+        }
+        return {
+          category: catName, points: pv,
+          question: picked?.question_en ?? `${catName} – ${pv} pts`,
+          answer:   picked?.answer_en   ?? "—",
+          answered: false,
+        };
+      });
     });
   } catch { return null; }
 }
@@ -55,7 +75,7 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
 function buildBoardFromMock(categories: string[], questionsPerCat: number): BoardCell[][] {
   const pointValues = getPointValues(questionsPerCat);
   return categories.map((cat) => {
-    const qs = MOCK_QUESTIONS[cat] ?? [];
+    const qs = shuffle(MOCK_QUESTIONS[cat] ?? []);
     return pointValues.map((pv, idx) => ({
       category: cat, points: pv,
       question: qs[idx]?.question ?? `[Mock] ${cat} – question ${idx + 1}`,
@@ -79,7 +99,7 @@ async function saveSession(name: string, mode: GameMode, categories: string[], t
         sorted.map((t, i) => ({ session_id: session.id, name: t.name, score: t.score, rank: i + 1 }))
       );
     }
-  } catch { /* silently skip if DB not ready */ }
+  } catch { /* silently skip */ }
 }
 
 // ─── No Coins Banner ──────────────────────────────────────────────────────────
@@ -93,7 +113,7 @@ function NoCoinsBanner({ coins, onDismiss }: { coins: number; onDismiss: () => v
         <p className="text-sm flex-1" style={{ color: "#e8d5a0" }}>
           {coins === 0
             ? <>You have <strong style={{ color: "#d4860a" }}>0 coins</strong>. Buy some from{" "}<Link href="/buy" className="font-bold underline" style={{ color: "#d4860a" }}>here</Link>.</>
-            : <>Not enough coins to select more. You have <strong style={{ color: "#d4860a" }}>{coins}</strong> coin{coins === 1 ? "" : "s"} — each category costs 1.</>
+            : <>Not enough coins. You have <strong style={{ color: "#d4860a" }}>{coins}</strong> coin{coins === 1 ? "" : "s"} — each category costs 1.</>
           }
         </p>
         <button onClick={onDismiss} className="text-lg leading-none" style={{ color: "#e8d5a0", opacity: 0.5 }}>✕</button>
@@ -326,22 +346,172 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
   );
 }
 
+// ─── Report Modal ─────────────────────────────────────────────────────────────
+
+const REPORT_REASONS = [
+  { id: "wrong_answer",    label: "Wrong question answer" },
+  { id: "inaccurate",     label: "Inaccurate answer" },
+  { id: "inappropriate",  label: "Inappropriate question or answer" },
+  { id: "other",          label: "Other" },
+];
+
+function ReportModal({ cell, onClose }: { cell: BoardCell; onClose: () => void }) {
+  const [email,     setEmail]     = useState("");
+  const [phone,     setPhone]     = useState("");
+  const [reason,    setReason]    = useState("");
+  const [otherText, setOtherText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted,  setSubmitted]  = useState(false);
+  const [err,        setErr]        = useState("");
+
+  const submit = async () => {
+    if (!email || !reason) { setErr("Please fill in your email and select a reason."); return; }
+    setSubmitting(true);
+    setErr("");
+    try {
+      const res = await fetch("/api/report-question", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: cell.question,
+          category: cell.category,
+          points: cell.points,
+          reason,
+          otherText,
+          email,
+          phone,
+        }),
+      });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (!res.ok || data.error) { setErr(data.error ?? "Something went wrong."); }
+      else { setSubmitted(true); }
+    } catch (e) { setErr(String(e)); }
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: "#00000088" }}>
+      <div className="w-full max-w-md rounded-2xl p-7 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+        {submitted ? (
+          <>
+            <div className="text-center">
+              <p className="text-3xl mb-3">✅</p>
+              <h3 className="font-bold text-lg" style={{ color: "#4ade80" }}>Report Submitted</h3>
+              <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>Thank you for helping us improve. We'll review this question shortly.</p>
+            </div>
+            <button onClick={onClose} className="w-full py-3 rounded-full font-bold text-sm" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>Close</button>
+          </>
+        ) : (
+          <>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-bold text-base" style={{ color: "#f87171" }}>⚠️ Report This Question</h3>
+                <p className="text-xs mt-1 truncate" style={{ color: "#e8d5a0", opacity: 0.5 }}>{cell.category} · {cell.points} pts</p>
+              </div>
+              <button onClick={onClose} className="text-lg leading-none shrink-0" style={{ color: "#e8d5a0", opacity: 0.4 }}>✕</button>
+            </div>
+
+            {err && <p className="text-xs px-3 py-2 rounded-xl" style={{ backgroundColor: "#dc262622", color: "#f87171", border: "1px solid #dc262644" }}>{err}</p>}
+
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-medium" style={{ color: "#e8d5a0" }}>Email <span style={{ color: "#f87171" }}>*</span></label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your@email.com"
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-medium" style={{ color: "#e8d5a0" }}>Mobile Number</label>
+              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+966 5X XXX XXXX"
+                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+                style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <label className="text-xs font-medium" style={{ color: "#e8d5a0" }}>Issue <span style={{ color: "#f87171" }}>*</span></label>
+              {REPORT_REASONS.map((r) => (
+                <label key={r.id} className="flex items-center gap-3 cursor-pointer">
+                  <div
+                    onClick={() => setReason(r.id)}
+                    className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                    style={{ border: `2px solid ${reason === r.id ? "#d4860a" : "#2e2050"}`, backgroundColor: reason === r.id ? "#d4860a" : "transparent", cursor: "pointer" }}
+                  >
+                    {reason === r.id && <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "#120d1f" }} />}
+                  </div>
+                  <span className="text-sm" style={{ color: reason === r.id ? "#e8d5a0" : "#e8d5a0", opacity: reason === r.id ? 1 : 0.65 }}>{r.label}</span>
+                </label>
+              ))}
+              {reason === "other" && (
+                <textarea
+                  value={otherText}
+                  onChange={(e) => setOtherText(e.target.value)}
+                  placeholder="Please describe the issue…"
+                  rows={3}
+                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none resize-none"
+                  style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+                />
+              )}
+            </div>
+
+            <button onClick={submit} disabled={submitting}
+              className="w-full py-3 rounded-full font-bold text-sm"
+              style={{ backgroundColor: "#f87171", color: "#120d1f", opacity: submitting ? 0.5 : 1, cursor: submitting ? "not-allowed" : "pointer" }}>
+              {submitting ? "Submitting…" : "Submit Report"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Question View ────────────────────────────────────────────────────────────
 
-function QuestionView({ cell, onReveal }: { cell: BoardCell; onReveal: () => void }) {
+function QuestionView({ cell, tickUrl, onReveal, onReport }: { cell: BoardCell; tickUrl: string; onReveal: () => void; onReport: () => void }) {
   const [timeLeft, setTimeLeft] = useState(60);
   const [expired,  setExpired]  = useState(false);
+  const tickRef = useRef<HTMLAudioElement | null>(null);
+
+  // Start tick audio when question is shown
   useEffect(() => {
-    if (timeLeft <= 0) { setExpired(true); return; }
+    if (!tickUrl) return;
+    const audio = new Audio(tickUrl);
+    audio.loop   = true;
+    audio.volume = 0.5;
+    tickRef.current = audio;
+    audio.play().catch(() => {});
+    return () => {
+      audio.pause();
+      tickRef.current = null;
+    };
+  }, [tickUrl]);
+
+  useEffect(() => {
+    if (timeLeft <= 0) {
+      setExpired(true);
+      tickRef.current?.pause();
+      return;
+    }
     const t = setInterval(() => setTimeLeft((s) => s - 1), 1000);
     return () => clearInterval(t);
   }, [timeLeft]);
+
+  const handleReveal = () => {
+    tickRef.current?.pause();
+    onReveal();
+  };
+
   const timerColor = timeLeft > 20 ? "#d4860a" : timeLeft > 10 ? "#f59e0b" : "#ef4444";
   return (
     <div className="flex flex-col gap-6 items-center text-center">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap justify-center">
         <span className="px-3 py-1 rounded-full text-xs font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{cell.category}</span>
         <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{cell.points.toLocaleString()} pts</span>
+        <button onClick={onReport} title="Report this question"
+          className="px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1"
+          style={{ backgroundColor: "#dc262622", border: "1px solid #dc262644", color: "#f87171" }}>
+          ⚠️ Report
+        </button>
       </div>
       <div className="flex flex-col items-center gap-2 w-full">
         <div className="w-full h-2 rounded-full" style={{ backgroundColor: "#2e2050" }}>
@@ -352,20 +522,25 @@ function QuestionView({ cell, onReveal }: { cell: BoardCell; onReveal: () => voi
       <div className="w-full rounded-2xl p-8" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
         <p className="text-xl md:text-2xl font-bold leading-snug" style={{ color: "#e8d5a0" }}>{cell.question}</p>
       </div>
-      <button onClick={onReveal} className="px-10 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>Reveal Answer</button>
+      <button onClick={handleReveal} className="px-10 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>Reveal Answer</button>
     </div>
   );
 }
 
 // ─── Answer Reveal ────────────────────────────────────────────────────────────
 
-function AnswerReveal({ cell, teams, gameMode, onAward, onNoOne }:
-  { cell: BoardCell; teams: Team[]; gameMode: GameMode; onAward: (id: number | null) => void; onNoOne: () => void }) {
+function AnswerReveal({ cell, teams, gameMode, onAward, onNoOne, onReport }:
+  { cell: BoardCell; teams: Team[]; gameMode: GameMode; onAward: (id: number | null) => void; onNoOne: () => void; onReport: () => void }) {
   return (
     <div className="flex flex-col gap-6 items-center text-center">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap justify-center">
         <span className="px-3 py-1 rounded-full text-xs font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{cell.category}</span>
         <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{cell.points.toLocaleString()} pts</span>
+        <button onClick={onReport} title="Report this question"
+          className="px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1"
+          style={{ backgroundColor: "#dc262622", border: "1px solid #dc262644", color: "#f87171" }}>
+          ⚠️ Report
+        </button>
       </div>
       <div className="w-full rounded-2xl p-6" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
         <p className="text-sm mb-4" style={{ color: "#e8d5a0", opacity: 0.55 }}>The question was:</p>
@@ -455,28 +630,144 @@ export default function ArenaGame() {
   const [soloScore, setSoloScore] = useState(0);
   const [loadingGame, setLoadingGame] = useState(false);
   const [sessionSaved, setSessionSaved] = useState(false);
+  const [reportCell, setReportCell] = useState<BoardCell | null>(null);
 
-  // ── Auth + purchase check ──────────────────────────────────────────────────
+  // Arena music
+  const [arenaMusicUrl, setArenaMusicUrl] = useState("");
+  const [tickUrl,       setTickUrl]       = useState("");
+  const arenaAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Load arena settings
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    supabase.from("site_settings").select("key, value")
+      .in("key", ["arena_music_url", "arena_tick_url"])
+      .then(({ data }) => {
+        if (!data) return;
+        const map = Object.fromEntries(data.map((r: { key: string; value: string }) => [r.key, r.value]));
+        setArenaMusicUrl(map.arena_music_url ?? "");
+        setTickUrl(map.arena_tick_url ?? "");
+      });
+  }, []);
+
+  // Arena background music: play during board/question/answer
+  useEffect(() => {
+    if (!arenaMusicUrl) return;
+    const inGame = ["board", "question", "answer"].includes(step);
+    if (inGame) {
+      if (!arenaAudioRef.current) {
+        const audio = new Audio(arenaMusicUrl);
+        audio.loop   = true;
+        audio.volume = 0.4;
+        arenaAudioRef.current = audio;
+      }
+      arenaAudioRef.current.play().catch(() => {});
+    } else {
+      arenaAudioRef.current?.pause();
+    }
+  }, [step, arenaMusicUrl]);
+
+  // Cleanup arena audio on unmount
+  useEffect(() => {
+    return () => {
+      arenaAudioRef.current?.pause();
+      arenaAudioRef.current = null;
+    };
+  }, []);
+
+  // Auth + purchase check — bulletproof against hangs/errors
   useEffect(() => {
     if (!isSupabaseConfigured) { setReady(true); setCoins(999); return; }
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session) {
+    let cancelled = false;
+    const finishWithDefaults = (uid: string | null) => {
+      if (cancelled) return;
+      if (uid) setUserId(uid);
+      setReady(true);
+    };
+
+    const recoverSessionFromStorage = (): { id: string; email?: string } | null => {
+      try {
+        const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").match(/https?:\/\/([^.]+)\./)?.[1];
+        if (!projectRef || typeof window === "undefined") return null;
+        const raw = window.localStorage.getItem(`sb-${projectRef}-auth-token`);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { access_token?: string };
+        const parts = parsed.access_token?.split(".");
+        if (parts && parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1])) as { sub?: string; email?: string; exp?: number };
+          if (payload.sub && (!payload.exp || payload.exp * 1000 > Date.now())) {
+            return { id: payload.sub, email: payload.email };
+          }
+        }
+      } catch { /* ignore */ }
+      return null;
+    };
+
+    (async () => {
+      // 1) Get the session, racing against a 4s timeout
+      let userIdLocal: string | null = null;
+      try {
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("getSession timeout")), 4000)),
+        ]) as { data: { session: { user: { id: string } } | null } };
+
+        if (sessionResult.data.session?.user) {
+          userIdLocal = sessionResult.data.session.user.id;
+        }
+      } catch {
+        // Fall back to localStorage
+        const recovered = recoverSessionFromStorage();
+        if (recovered) userIdLocal = recovered.id;
+      }
+
+      // No session anywhere → bounce to login
+      if (!userIdLocal) {
         router.replace("/login?next=/arena");
         return;
       }
-      setUserId(session.user.id);
 
-      const [profileResult, catsResult] = await Promise.all([
-        supabase.from("profiles").select("category_coins").eq("id", session.user.id).maybeSingle(),
-        supabase.from("categories").select("name_en").eq("active", true).order("name_en"),
-      ]);
-      setCoins(profileResult.data?.category_coins ?? 0);
-      if (catsResult.data && catsResult.data.length > 0) {
-        setLiveCategories(catsResult.data.map((c) => c.name_en));
-      }
-      setReady(true);
-    });
+      // 2) Fetch profile + categories in parallel, each with its own timeout
+      const profilePromise = (async () => {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          const { data } = await supabase
+            .from("profiles")
+            .select("category_coins")
+            .eq("id", userIdLocal!)
+            .abortSignal(ctrl.signal)
+            .maybeSingle();
+          clearTimeout(t);
+          return data?.category_coins ?? 0;
+        } catch { return 0; }
+      })();
+
+      const categoriesPromise = (async () => {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          const { data } = await supabase
+            .from("categories")
+            .select("name_en")
+            .eq("active", true)
+            .order("name_en")
+            .abortSignal(ctrl.signal);
+          clearTimeout(t);
+          return data && data.length > 0 ? data.map((c) => c.name_en) : null;
+        } catch { return null; }
+      })();
+
+      const [coinsValue, categoryList] = await Promise.all([profilePromise, categoriesPromise]);
+
+      if (cancelled) return;
+      setCoins(coinsValue);
+      if (categoryList) setLiveCategories(categoryList);
+      finishWithDefaults(userIdLocal);
+    })();
+
+    return () => { cancelled = true; };
   }, [router]);
 
   const toggleCategory = useCallback((cat: string) => {
@@ -508,7 +799,7 @@ export default function ArenaGame() {
     }
 
     const questionsPerCat = QUESTIONS_PER_CATEGORY[selectedCategories.length] ?? 6;
-    const dbBoard  = await fetchBoardFromSupabase(selectedCategories, questionsPerCat);
+    const dbBoard   = await fetchBoardFromSupabase(selectedCategories, questionsPerCat);
     const builtBoard = dbBoard ?? buildBoardFromMock(selectedCategories, questionsPerCat);
     setBoard(builtBoard);
     setTeams(Array.from({ length: teamCount }, (_, i) => ({ id: i, name: teamNames[i] || `Team ${i + 1}`, score: 0 })));
@@ -524,6 +815,7 @@ export default function ArenaGame() {
       const questionsPerCat = QUESTIONS_PER_CATEGORY[selectedCategories.length] ?? 6;
       await saveSession(sessionName, gameMode, selectedCategories, finalTeams, finalSoloScore, questionsPerCat);
     }
+    arenaAudioRef.current?.pause();
     setStep("results");
   }, [sessionSaved, sessionName, gameMode, selectedCategories]);
 
@@ -555,7 +847,6 @@ export default function ArenaGame() {
     setBoard([]); setCurrentCell(null); setSoloScore(0); setSessionSaved(false);
   };
 
-  // Show spinner while auth check runs
   if (!ready) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -568,16 +859,11 @@ export default function ArenaGame() {
   return (
     <div className="w-full max-w-3xl mx-auto">
       {showBanner && <NoCoinsBanner coins={coins} onDismiss={() => setShowBanner(false)} />}
+      {reportCell && <ReportModal cell={reportCell} onClose={() => setReportCell(null)} />}
 
       {step === "categories" && (
-        <CategorySelect
-          selected={selectedCategories}
-          coins={coins}
-          categories={liveCategories}
-          onToggle={toggleCategory}
-          onShowNoBanner={() => setShowBanner(true)}
-          onNext={() => setStep("gameMode")}
-        />
+        <CategorySelect selected={selectedCategories} coins={coins} categories={liveCategories}
+          onToggle={toggleCategory} onShowNoBanner={() => setShowBanner(true)} onNext={() => setStep("gameMode")} />
       )}
       {step === "gameMode" && (
         <GameModeSelect gameMode={gameMode} teamCount={teamCount} teamNames={teamNames}
@@ -593,9 +879,16 @@ export default function ArenaGame() {
         <GameBoard board={board} teams={teams} gameMode={gameMode} sessionName={sessionName}
           onSelectCell={handleSelectCell} onEndGame={() => handleEndGame(teams, soloScore)} />
       )}
-      {step === "question" && currentCell && <QuestionView cell={currentCell} onReveal={handleReveal} />}
-      {step === "answer"   && currentCell && <AnswerReveal cell={currentCell} teams={teams} gameMode={gameMode} onAward={handleAward} onNoOne={handleNoOne} />}
-      {step === "results"  && <ResultsScreen teams={teams} gameMode={gameMode} soloScore={soloScore} sessionName={sessionName} onPlayAgain={handlePlayAgain} />}
+      {step === "question" && currentCell && (
+        <QuestionView cell={currentCell} tickUrl={tickUrl} onReveal={handleReveal} onReport={() => setReportCell(currentCell)} />
+      )}
+      {step === "answer" && currentCell && (
+        <AnswerReveal cell={currentCell} teams={teams} gameMode={gameMode}
+          onAward={handleAward} onNoOne={handleNoOne} onReport={() => setReportCell(currentCell)} />
+      )}
+      {step === "results" && (
+        <ResultsScreen teams={teams} gameMode={gameMode} soloScore={soloScore} sessionName={sessionName} onPlayAgain={handlePlayAgain} />
+      )}
     </div>
   );
 }
