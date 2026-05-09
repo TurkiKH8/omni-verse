@@ -35,9 +35,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: linkError.message }, { status: 400 });
     }
 
-    const userId     = linkData.user.id;
-    const confirmUrl = linkData.properties.action_link;
-    const apiKey     = process.env.RESEND_API_KEY;
+    const userId = linkData.user.id;
+    // Bypass Supabase's action_link (which uses whatever Site URL is configured
+    // in the Supabase dashboard) and route confirmation through our own domain.
+    // The /auth/confirm route handler verifies the token_hash via verifyOtp and
+    // then redirects to `next` (here: /welcome).
+    const confirmUrl = `${siteUrl}/auth/confirm?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}&type=signup&next=${encodeURIComponent("/welcome")}`;
+    const apiKey = process.env.RESEND_API_KEY;
 
     if (!apiKey) {
       await admin.auth.admin.deleteUser(userId);
