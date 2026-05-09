@@ -42,28 +42,90 @@ export default function AdminLoginPage() {
       return;
     }
 
-    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (authError || !data.user) {
-      setError("Invalid email or password.");
+    // 1) Auth via the server-side route (5s hard timeout, no browser auth lock)
+    const ctrl = new AbortController();
+    const hangGuard = setTimeout(() => ctrl.abort(), 5000);
+    let tokens: { access_token: string; refresh_token: string };
+    try {
+      const resp = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(hangGuard);
+      const data = await resp.json() as { access_token?: string; refresh_token?: string; error?: string };
+      if (!resp.ok || !data.access_token) {
+        setError("Invalid email or password.");
+        setLoading(false);
+        return;
+      }
+      tokens = { access_token: data.access_token, refresh_token: data.refresh_token! };
+    } catch (err: unknown) {
+      clearTimeout(hangGuard);
+      const e = err as { name?: string };
+      setError(e.name === "AbortError" ? "Login timed out — try again." : "Connection error.");
       setLoading(false);
       return;
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("is_admin, developer_level")
-      .eq("id", data.user.id)
-      .maybeSingle();
+    // 2) Install the session client-side (race against 4s in case the lock hangs)
+    try {
+      await Promise.race([
+        supabase.auth.setSession(tokens),
+        new Promise((_, r) => setTimeout(() => r(new Error("setSession timeout")), 4000)),
+      ]);
+    } catch {
+      // Write directly to localStorage as a fallback so the dashboard sees the session
+      const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").match(/https?:\/\/([^.]+)\./)?.[1];
+      if (projectRef && typeof window !== "undefined") {
+        window.localStorage.setItem(
+          `sb-${projectRef}-auth-token`,
+          JSON.stringify({ ...tokens, token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600 })
+        );
+      }
+    }
+
+    // 3) Decode user id from the JWT (avoids another auth call that could hang)
+    let userId = "";
+    try {
+      const payload = JSON.parse(atob(tokens.access_token.split(".")[1])) as { sub?: string };
+      userId = payload.sub ?? "";
+    } catch { /* ignore */ }
+
+    // 4) Verify admin/developer access (5s timeout, fail closed)
+    let profile: { is_admin?: boolean; developer_level?: string | null } | null = null;
+    if (userId) {
+      try {
+        const profCtrl = new AbortController();
+        const profT = setTimeout(() => profCtrl.abort(), 5000);
+        const { data } = await supabase
+          .from("profiles")
+          .select("is_admin, developer_level")
+          .eq("id", userId)
+          .abortSignal(profCtrl.signal)
+          .maybeSingle();
+        clearTimeout(profT);
+        profile = data;
+      } catch {
+        setError("Could not verify admin access — please try again.");
+        setLoading(false);
+        return;
+      }
+    }
 
     if (!profile?.is_admin && !profile?.developer_level) {
-      await supabase.auth.signOut();
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((r) => setTimeout(r, 2000)),
+      ]).catch(() => {});
       setError("Access denied. This account does not have admin or developer privileges.");
       setLoading(false);
       return;
     }
 
-    await supabase.from("audit_log").insert({
+    // 5) Audit log entry — fire-and-forget so a slow query never blocks navigation
+    void supabase.from("audit_log").insert({
       user_email: email,
       action: "Admin login successful",
       target: profile.is_admin ? "Admin" : `Developer (${profile.developer_level})`,

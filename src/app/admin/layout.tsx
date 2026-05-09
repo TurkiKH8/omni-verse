@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import { supabase } from "@/lib/supabase/client";
+import { raceWithTimeout, decodeSessionFromStorage } from "@/lib/supabase/withTimeout";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname    = usePathname();
@@ -13,19 +14,36 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [rank,           setRank]           = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      supabase
-        .from("profiles")
-        .select("is_admin, developer_level, rank")
-        .eq("id", user.id)
-        .maybeSingle()
-        .then(({ data }) => {
-          setIsAdmin(data?.is_admin ?? false);
-          setDeveloperLevel(data?.developer_level ?? null);
-          setRank(data?.rank ?? null);
-        });
-    });
+    let cancelled = false;
+
+    const loadProfile = async (userId: string) => {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 5000);
+        const { data } = await supabase
+          .from("profiles")
+          .select("is_admin, developer_level, rank")
+          .eq("id", userId)
+          .abortSignal(ctrl.signal)
+          .maybeSingle();
+        clearTimeout(t);
+        if (cancelled) return;
+        setIsAdmin(data?.is_admin ?? false);
+        setDeveloperLevel(data?.developer_level ?? null);
+        setRank(data?.rank ?? null);
+      } catch { /* keep default values */ }
+    };
+
+    raceWithTimeout(supabase.auth.getUser(), 4000)
+      .then((res) => {
+        if (res.data.user) loadProfile(res.data.user.id);
+      })
+      .catch(() => {
+        const recovered = decodeSessionFromStorage();
+        if (recovered) loadProfile(recovered.id);
+      });
+
+    return () => { cancelled = true; };
   }, []);
 
   if (pathname === "/admin/login") {

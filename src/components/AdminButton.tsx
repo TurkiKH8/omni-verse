@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
+import { raceWithTimeout, decodeSessionFromStorage } from "@/lib/supabase/withTimeout";
 
 const STAFF_RANKS = ["Omni 1", "Omni 2", "Omni 3", "Master Omni"];
 
@@ -13,33 +14,56 @@ export default function AdminButton() {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session?.user) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("rank")
-        .eq("id", session.user.id)
-        .maybeSingle();
-      setRank(data?.rank ?? "Default");
-      setVisible(true);
-    });
+    let cancelled = false;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_e, session) => {
-      if (session?.user) {
+    const showAndLoadRank = async (userId: string) => {
+      if (cancelled) return;
+      // Show the button immediately so it can never disappear silently
+      setVisible(true);
+
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 5000);
         const { data } = await supabase
           .from("profiles")
           .select("rank")
-          .eq("id", session.user.id)
+          .eq("id", userId)
+          .abortSignal(ctrl.signal)
           .maybeSingle();
+        clearTimeout(t);
+        if (cancelled) return;
         setRank(data?.rank ?? "Default");
-        setVisible(true);
+      } catch {
+        setRank("Default");
+      }
+    };
+
+    // Initial check: getSession with a 4s timeout, then localStorage fallback
+    raceWithTimeout(supabase.auth.getSession(), 4000)
+      .then((res) => {
+        const session = res.data.session;
+        if (session?.user) showAndLoadRank(session.user.id);
+      })
+      .catch(() => {
+        const recovered = decodeSessionFromStorage();
+        if (recovered) showAndLoadRank(recovered.id);
+      });
+
+    // React to login/logout events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (cancelled) return;
+      if (session?.user) {
+        showAndLoadRank(session.user.id);
       } else {
         setVisible(false);
         setRank(null);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   if (!visible) return null;
