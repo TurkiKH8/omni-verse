@@ -47,18 +47,31 @@ function LoginForm() {
       return;
     }
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (authError) {
-      const msg = authError.message.toLowerCase();
-      if (msg.includes("email not confirmed") || msg.includes("not confirmed")) {
-        setError("Please check your email and click the confirmation link before logging in.");
-      } else {
-        setError(authError.message);
-      }
+    // If the request hangs for 12 seconds, unblock the button automatically
+    const hangGuard = setTimeout(() => {
       setLoading(false);
-    } else {
-      window.location.href = next;
+      setError("Request timed out — please check your connection and try again.");
+    }, 12000);
+
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      clearTimeout(hangGuard);
+
+      if (authError) {
+        const msg = authError.message.toLowerCase();
+        if (msg.includes("email not confirmed") || msg.includes("not confirmed")) {
+          setError("Please check your email and click the confirmation link before logging in.");
+        } else {
+          setError(authError.message);
+        }
+        setLoading(false);
+      } else {
+        window.location.href = next;
+      }
+    } catch {
+      clearTimeout(hangGuard);
+      setError("Connection error — please check your internet and try again.");
+      setLoading(false);
     }
   };
 
