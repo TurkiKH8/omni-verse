@@ -24,22 +24,29 @@ export default function Navbar() {
     if (!isSupabaseConfigured) { setAuthReady(true); return; }
 
     const loadUser = async (userId: string, email: string | undefined) => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("username, category_coins")
-        .eq("id", userId)
-        .maybeSingle();
-      setUsername(data?.username || email?.split("@")[0] || "User");
-      setCoins(data?.category_coins ?? 0);
-      setAuthReady(true);
+      try {
+        const { data } = await supabase
+          .from("profiles")
+          .select("username, category_coins")
+          .eq("id", userId)
+          .maybeSingle();
+        setUsername(data?.username || email?.split("@")[0] || "User");
+        setCoins(data?.category_coins ?? 0);
+      } catch {
+        // DB unreachable — fall back to email so auth area never stays blank
+        setUsername(email?.split("@")[0] || "User");
+        setCoins(0);
+      } finally {
+        setAuthReady(true);
+      }
     };
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) loadUser(session.user.id, session.user.email ?? undefined);
-      else setAuthReady(true);
-    });
+    // Absolute safety net: if auth never resolves (e.g. Supabase timeout),
+    // show Login / Sign Up after 5 seconds instead of staying blank forever.
+    const safetyTimer = setTimeout(() => setAuthReady(true), 5000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      clearTimeout(safetyTimer);
       if (session?.user) {
         loadUser(session.user.id, session.user.email ?? undefined);
       } else {
@@ -49,7 +56,10 @@ export default function Navbar() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(safetyTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleSignOut = async () => {
