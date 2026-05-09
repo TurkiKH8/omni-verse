@@ -29,7 +29,7 @@ export default function Navbar() {
 
       try {
         const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 6000);
+        const t = setTimeout(() => ctrl.abort(), 4000);
         const { data } = await supabase
           .from("profiles")
           .select("username, category_coins")
@@ -44,12 +44,31 @@ export default function Navbar() {
       }
     };
 
-    // Quick initial check
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
+    // Quick initial check — race against 4s timeout so an orphaned auth lock can't hang the navbar
+    Promise.race([
+      supabase.auth.getSession(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("getSession timeout")), 4000)),
+    ])
+      .then((res) => {
+        const session = (res as { data: { session: { user: { id: string; email?: string | null } } | null } }).data.session;
         if (session?.user) loadUser(session.user.id, session.user.email ?? undefined);
       })
-      .catch(() => {});
+      .catch(() => {
+        // Fall back to reading the session token straight from localStorage
+        try {
+          const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").match(/https?:\/\/([^.]+)\./)?.[1];
+          if (!projectRef || typeof window === "undefined") return;
+          const raw = window.localStorage.getItem(`sb-${projectRef}-auth-token`);
+          if (!raw) return;
+          const parsed = JSON.parse(raw) as { access_token?: string; user?: { id: string; email?: string } };
+          // The user payload may live under a nested key depending on supabase-js version
+          const tokenParts = parsed.access_token?.split(".");
+          if (tokenParts && tokenParts.length === 3) {
+            const payload = JSON.parse(atob(tokenParts[1])) as { sub?: string; email?: string };
+            if (payload.sub) loadUser(payload.sub, payload.email);
+          }
+        } catch { /* ignore */ }
+      });
 
     // Keep in sync with auth changes (sign in / sign out)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
@@ -65,9 +84,20 @@ export default function Navbar() {
   }, []);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
     setUsername(null);
     setCoins(null);
+    // Race signOut against a 3s timeout — if the auth lock hangs, force redirect anyway
+    await Promise.race([
+      supabase.auth.signOut(),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]).catch(() => {});
+    // Belt-and-suspenders: clear the local session token directly
+    try {
+      const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").match(/https?:\/\/([^.]+)\./)?.[1];
+      if (projectRef && typeof window !== "undefined") {
+        window.localStorage.removeItem(`sb-${projectRef}-auth-token`);
+      }
+    } catch { /* ignore */ }
     window.location.href = "/";
   };
 
@@ -76,11 +106,33 @@ export default function Navbar() {
       className="w-full px-6 py-4 flex items-center justify-between relative z-50"
       style={{ borderBottom: "1px solid #2e2050" }}
     >
-      {/* Logo */}
-      <Link href="/" className="flex items-center gap-2">
-        <span className="text-2xl font-bold tracking-wide" style={{ color: "#d4860a" }}>Omni</span>
-        <span className="text-2xl font-bold tracking-wide" style={{ color: "#e8d5a0" }}>-Verse</span>
-      </Link>
+      {/* Logo + quick Sign Out */}
+      <div className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-2">
+          <span className="text-2xl font-bold tracking-wide" style={{ color: "#d4860a" }}>Omni</span>
+          <span className="text-2xl font-bold tracking-wide" style={{ color: "#e8d5a0" }}>-Verse</span>
+        </Link>
+        <button
+          onClick={username ? handleSignOut : undefined}
+          disabled={!username}
+          aria-label={username ? "Sign out" : "Sign out (you are not logged in)"}
+          title={username ? "Sign out" : "Not logged in"}
+          className="flex items-center justify-center w-9 h-9 rounded-full transition-opacity"
+          style={{
+            border: "1px solid #2e2050",
+            color: "#e8d5a0",
+            opacity: username ? 1 : 0.3,
+            cursor: username ? "pointer" : "not-allowed",
+            backgroundColor: username ? "#1e1530" : "transparent",
+          }}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
+      </div>
 
       {/* Desktop Nav Links */}
       <div className="hidden md:flex items-center gap-8">

@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     }
 
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 10000);
+    const t = setTimeout(() => ctrl.abort(), 5000);
 
     let resp: Response;
     try {

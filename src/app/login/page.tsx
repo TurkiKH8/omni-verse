@@ -42,7 +42,7 @@ function LoginForm() {
     setError("");
 
     const ctrl = new AbortController();
-    const hangGuard = setTimeout(() => { ctrl.abort(); }, 14000);
+    const hangGuard = setTimeout(() => { ctrl.abort(); }, 5000);
 
     try {
       const resp = await fetch("/api/auth/login", {
@@ -70,9 +70,26 @@ function LoginForm() {
         return;
       }
 
-      await supabase.auth.setSession({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token!,
+      // Race setSession against a 5s timeout so an orphaned auth lock can't hang us
+      await Promise.race([
+        supabase.auth.setSession({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token!,
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("setSession timeout")), 5000)),
+      ]).catch(() => {
+        // If setSession hangs, write tokens directly so the next page can pick them up
+        const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").match(/https?:\/\/([^.]+)\./)?.[1];
+        if (projectRef && typeof window !== "undefined") {
+          const session = {
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+            token_type: "bearer",
+            expires_in: 3600,
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+          };
+          window.localStorage.setItem(`sb-${projectRef}-auth-token`, JSON.stringify(session));
+        }
       });
 
       window.location.href = next;
@@ -80,7 +97,7 @@ function LoginForm() {
       clearTimeout(hangGuard);
       const e = err as { name?: string };
       if (e.name === "AbortError") {
-        setError("Request timed out — please check your connection and try again.");
+        setError("Login timed out after 5 seconds — please try again.");
       } else {
         setError("Connection error — please check your internet and try again.");
       }
