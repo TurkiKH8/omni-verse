@@ -5,13 +5,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { ALL_CATEGORIES, MOCK_QUESTIONS } from "@/lib/mockQuestions";
+import { useLanguage } from "@/components/LanguageProvider";
 
 type Step = "categories" | "gameMode" | "session" | "board" | "question" | "answer" | "results";
 type GameMode = "solo" | "team";
 
 interface Team      { id: number; name: string; score: number; }
-interface BoardCell { category: string; points: number; question: string; answer: string; answered: boolean; image_url?: string | null; }
-interface CategoryOption { name: string; image_url?: string | null; }
+interface BoardCell {
+  category: string;            // English category name (canonical)
+  category_ar?: string | null; // Arabic category name (for display)
+  category_image_url?: string | null; // Cover shown above column header
+  points: number;
+  question: string;            // English question text (back-compat)
+  answer: string;              // English answer text   (back-compat)
+  question_ar?: string | null;
+  answer_ar?: string | null;
+  answered: boolean;
+  image_url?: string | null;   // Per-question image
+}
+interface CategoryOption { name: string; name_ar?: string | null; image_url?: string | null; }
 
 const QUESTIONS_PER_CATEGORY: Record<number, number> = {
   1: 24, 2: 12, 3: 8, 4: 6, 5: 5, 6: 4,
@@ -43,23 +55,34 @@ type DBQuestion = {
   points: number;
   question_en: string;
   answer_en: string;
+  question_ar?: string | null;
+  answer_ar?: string | null;
   image_url?: string | null;
 };
+
+type DBCategoryRow = { id: string; name_en: string; name_ar?: string | null; image_url?: string | null };
 
 async function fetchBoardFromSupabase(categories: string[], questionsPerCat: number): Promise<BoardCell[][] | null> {
   if (!isSupabaseConfigured) return null;
   try {
-    const { data: cats } = await supabase
-      .from("categories").select("id, name_en").in("name_en", categories);
+    // Categories: try full shape (name_ar, image_url) first; fall back if columns missing
+    let cats: DBCategoryRow[] | null = null;
+    const catFull = await supabase
+      .from("categories").select("id, name_en, name_ar, image_url").in("name_en", categories);
+    if (catFull.data && !catFull.error) {
+      cats = catFull.data as DBCategoryRow[];
+    } else {
+      const catBasic = await supabase
+        .from("categories").select("id, name_en, name_ar").in("name_en", categories);
+      cats = (catBasic.data ?? null) as DBCategoryRow[] | null;
+    }
     if (!cats || cats.length === 0) return null;
 
-    // Try to select with image_url first; if the column doesn't exist yet
-    // (SQL migration not run), fall back to the original column set so the
-    // board still loads.
+    // Questions: try with image_url, fall back without
     let qs: DBQuestion[] | null = null;
     const tryFull = await supabase
       .from("questions")
-      .select("category_id, points, question_en, answer_en, image_url")
+      .select("category_id, points, question_en, answer_en, question_ar, answer_ar, image_url")
       .in("category_id", cats.map((c) => c.id))
       .order("points", { ascending: true });
     if (tryFull.data && !tryFull.error) {
@@ -67,7 +90,7 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
     } else {
       const tryBasic = await supabase
         .from("questions")
-        .select("category_id, points, question_en, answer_en")
+        .select("category_id, points, question_en, answer_en, question_ar, answer_ar")
         .in("category_id", cats.map((c) => c.id))
         .order("points", { ascending: true });
       qs = (tryBasic.data ?? null) as DBQuestion[] | null;
@@ -78,30 +101,33 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
     const standard6  = questionsPerCat === 6;
 
     return categories.map((catName) => {
-      const catRow = cats.find((c) => c.name_en === catName);
-      const catQs  = qs.filter((x) => x.category_id === catRow?.id);
+      const catRow = cats!.find((c) => c.name_en === catName);
+      const catQs  = qs!.filter((x) => x.category_id === catRow?.id);
 
       return pointValues.map((pv, idx) => {
         let picked: DBQuestion | undefined;
         if (standard6) {
-          // Group by matching point value, pick randomly
           const bucket = catQs.filter((q) => q.points === pv);
           picked = bucket.length > 0
             ? bucket[Math.floor(Math.random() * bucket.length)]
             : shuffle(catQs)[idx];
         } else {
-          // Divide sorted questions into difficulty buckets
           const sorted     = [...catQs].sort((a, b) => a.points - b.points);
           const bucketSize = Math.max(1, Math.ceil(sorted.length / questionsPerCat));
           const bucket     = sorted.slice(idx * bucketSize, (idx + 1) * bucketSize);
           picked = bucket.length > 0 ? bucket[Math.floor(Math.random() * bucket.length)] : sorted[idx];
         }
         return {
-          category: catName, points: pv,
-          question:  picked?.question_en ?? `${catName} – ${pv} pts`,
-          answer:    picked?.answer_en   ?? "—",
-          answered:  false,
-          image_url: picked?.image_url   ?? null,
+          category:           catName,
+          category_ar:        catRow?.name_ar ?? null,
+          category_image_url: catRow?.image_url ?? null,
+          points:             pv,
+          question:           picked?.question_en ?? `${catName} – ${pv} pts`,
+          answer:             picked?.answer_en   ?? "—",
+          question_ar:        picked?.question_ar ?? null,
+          answer_ar:          picked?.answer_ar   ?? null,
+          answered:           false,
+          image_url:          picked?.image_url   ?? null,
         };
       });
     });
@@ -141,6 +167,7 @@ async function saveSession(name: string, mode: GameMode, categories: string[], t
 // ─── No Coins Banner ──────────────────────────────────────────────────────────
 
 function NoCoinsBanner({ coins, onDismiss }: { coins: number; onDismiss: () => void }) {
+  const { t } = useLanguage();
   return (
     <div className="fixed bottom-6 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
       <div className="flex items-center gap-3 px-5 py-3 rounded-2xl shadow-xl pointer-events-auto"
@@ -148,8 +175,8 @@ function NoCoinsBanner({ coins, onDismiss }: { coins: number; onDismiss: () => v
         <span className="text-2xl">🪙</span>
         <p className="text-sm flex-1" style={{ color: "#e8d5a0" }}>
           {coins === 0
-            ? <>You have <strong style={{ color: "#d4860a" }}>0 coins</strong>. Buy some from{" "}<Link href="/buy" className="font-bold underline" style={{ color: "#d4860a" }}>here</Link>.</>
-            : <>Not enough coins. You have <strong style={{ color: "#d4860a" }}>{coins}</strong> coin{coins === 1 ? "" : "s"} — each category costs 1.</>
+            ? <>{t.arena.noCoinsTitle} <strong style={{ color: "#d4860a" }}>0</strong> {t.arena.noCoinsZero}{" "}<Link href="/buy" className="font-bold underline" style={{ color: "#d4860a" }}>{t.arena.noCoinsHere}</Link>.</>
+            : <>{t.arena.notEnoughA} <strong style={{ color: "#d4860a" }}>{coins}</strong> {t.arena.notEnoughB}{coins === 1 ? "" : "s"} {t.arena.notEnoughC}</>
           }
         </p>
         <button onClick={onDismiss} className="text-lg leading-none" style={{ color: "#e8d5a0", opacity: 0.5 }}>✕</button>
@@ -187,6 +214,7 @@ function StepIndicator({ step }: { step: Step }) {
 
 function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner, onNext }:
   { selected: string[]; coins: number; categories: CategoryOption[]; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
+  const { t, lang } = useLanguage();
   const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
 
   const handleClick = (catName: string) => {
@@ -199,10 +227,10 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
     <div className="flex flex-col gap-6">
       <StepIndicator step="categories" />
       <div className="text-center">
-        <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Pick Your Categories</h2>
+        <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>{t.arena.pickCategories}</h2>
         <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>
-          Choose 1–6 categories · {selected.length}/6 selected · <span style={{ color: "#d4860a" }}>🪙 {coins} coins</span>
-          {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} questions each</span>}
+          {t.arena.pickHint} · {selected.length}/6 {t.arena.selected} · <span style={{ color: "#d4860a" }}>🪙 {coins} {t.arena.coins}</span>
+          {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} {t.arena.questionsEach}</span>}
         </p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -210,18 +238,20 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           const isSelected = selected.includes(cat.name);
           const disabled   = !isSelected && selected.length >= 6;
           const hasImage   = !!cat.image_url;
+          // Always identify by English name internally; show Arabic label if available + lang=ar
+          const displayName = lang === "ar" && cat.name_ar ? cat.name_ar : cat.name;
           return (
             <button key={cat.name} onClick={() => !disabled && handleClick(cat.name)}
               className="rounded-2xl text-sm font-semibold text-left transition-all overflow-hidden flex flex-col"
               style={{ backgroundColor: isSelected ? "#d4860a22" : "#1e1530", border: `2px solid ${isSelected ? "#d4860a" : "#2e2050"}`, color: isSelected ? "#d4860a" : disabled ? "#e8d5a033" : "#e8d5a0", cursor: disabled ? "not-allowed" : "pointer" }}>
               {hasImage && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={cat.image_url!} alt={cat.name}
+                <img src={cat.image_url!} alt={displayName}
                   className="w-full h-24 object-cover"
                   style={{ opacity: disabled ? 0.3 : 1 }} />
               )}
               <span className="px-4 py-3">
-                {isSelected && <span className="mr-2">✓</span>}{cat.name}
+                {isSelected && <span className="mr-2">✓</span>}{displayName}
               </span>
             </button>
           );
@@ -231,7 +261,7 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
         <button onClick={onNext} disabled={selected.length === 0}
           className="px-8 py-3 rounded-full font-bold text-sm"
           style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: selected.length === 0 ? 0.4 : 1, cursor: selected.length === 0 ? "not-allowed" : "pointer" }}>
-          Next →
+          {t.arena.next}
         </button>
       </div>
     </div>
@@ -242,12 +272,13 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
 
 function GameModeSelect({ gameMode, teamCount, teamNames, onModeChange, onTeamCountChange, onTeamNameChange, onBack, onNext }:
   { gameMode: GameMode; teamCount: number; teamNames: string[]; onModeChange: (m: GameMode) => void; onTeamCountChange: (n: number) => void; onTeamNameChange: (i: number, v: string) => void; onBack: () => void; onNext: () => void }) {
+  const { t } = useLanguage();
   return (
     <div className="flex flex-col gap-6">
       <StepIndicator step="gameMode" />
       <div className="text-center">
-        <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Game Mode</h2>
-        <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>How will you play?</p>
+        <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>{t.arena.gameMode}</h2>
+        <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>{t.arena.gameModeHint}</p>
       </div>
       <div className="grid grid-cols-2 gap-4">
         {(["solo", "team"] as GameMode[]).map((mode) => (
@@ -255,15 +286,15 @@ function GameModeSelect({ gameMode, teamCount, teamNames, onModeChange, onTeamCo
             className="py-8 rounded-2xl flex flex-col items-center gap-3 transition-all"
             style={{ backgroundColor: gameMode === mode ? "#d4860a22" : "#1e1530", border: `2px solid ${gameMode === mode ? "#d4860a" : "#2e2050"}` }}>
             <span className="text-4xl">{mode === "solo" ? "👤" : "👥"}</span>
-            <span className="font-bold capitalize" style={{ color: gameMode === mode ? "#d4860a" : "#e8d5a0" }}>{mode === "solo" ? "Solo" : "Team"}</span>
-            <span className="text-xs" style={{ color: "#e8d5a0", opacity: 0.55 }}>{mode === "solo" ? "Play by yourself" : "Up to 6 teams"}</span>
+            <span className="font-bold" style={{ color: gameMode === mode ? "#d4860a" : "#e8d5a0" }}>{mode === "solo" ? t.arena.solo : t.arena.team}</span>
+            <span className="text-xs" style={{ color: "#e8d5a0", opacity: 0.55 }}>{mode === "solo" ? t.arena.soloDesc : t.arena.teamDesc}</span>
           </button>
         ))}
       </div>
       {gameMode === "team" && (
         <div className="flex flex-col gap-5 mt-2">
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Number of Teams: <span style={{ color: "#d4860a" }}>{teamCount}</span></label>
+            <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{t.arena.teamCount} <span style={{ color: "#d4860a" }}>{teamCount}</span></label>
             <div className="flex gap-2">
               {[2,3,4,5,6].map((n) => (
                 <button key={n} onClick={() => onTeamCountChange(n)}
@@ -277,8 +308,8 @@ function GameModeSelect({ gameMode, teamCount, teamNames, onModeChange, onTeamCo
           <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: teamCount }).map((_, i) => (
               <div key={i} className="flex flex-col gap-1">
-                <label className="text-xs font-medium" style={{ color: "#e8d5a0", opacity: 0.6 }}>Team {i + 1}</label>
-                <input type="text" value={teamNames[i] ?? `Team ${i + 1}`} onChange={(e) => onTeamNameChange(i, e.target.value)}
+                <label className="text-xs font-medium" style={{ color: "#e8d5a0", opacity: 0.6 }}>{t.arena.teamLabel} {i + 1}</label>
+                <input type="text" value={teamNames[i] ?? `${t.arena.teamLabel} ${i + 1}`} onChange={(e) => onTeamNameChange(i, e.target.value)}
                   className="px-3 py-2 rounded-xl text-sm outline-none"
                   style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} />
               </div>
@@ -287,8 +318,8 @@ function GameModeSelect({ gameMode, teamCount, teamNames, onModeChange, onTeamCo
         </div>
       )}
       <div className="flex justify-between mt-2">
-        <button onClick={onBack} className="px-6 py-3 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>← Back</button>
-        <button onClick={onNext} className="px-8 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>Next →</button>
+        <button onClick={onBack} className="px-6 py-3 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>{t.arena.back}</button>
+        <button onClick={onNext} className="px-8 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>{t.arena.next}</button>
       </div>
     </div>
   );
@@ -298,12 +329,13 @@ function GameModeSelect({ gameMode, teamCount, teamNames, onModeChange, onTeamCo
 
 function SessionSetup({ sessionName, onChange, onBack, onStart, loading, error }:
   { sessionName: string; onChange: (v: string) => void; onBack: () => void; onStart: () => void; loading: boolean; error?: string | null }) {
+  const { t } = useLanguage();
   return (
     <div className="flex flex-col gap-6">
       <StepIndicator step="session" />
       <div className="text-center">
-        <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Name Your Session</h2>
-        <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>Give this game session a name</p>
+        <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>{t.arena.sessionTitle}</h2>
+        <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>{t.arena.sessionHint}</p>
       </div>
       {error && (
         <div className="px-4 py-3 rounded-xl text-sm text-center" style={{ backgroundColor: "#dc262622", border: "1px solid #dc262644", color: "#f87171" }}>
@@ -311,18 +343,18 @@ function SessionSetup({ sessionName, onChange, onBack, onStart, loading, error }
         </div>
       )}
       <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Session Name</label>
-        <input type="text" placeholder="e.g. Friday Night Trivia" value={sessionName} onChange={(e) => onChange(e.target.value)}
+        <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{t.arena.sessionName}</label>
+        <input type="text" placeholder={t.arena.sessionPlaceholder} value={sessionName} onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sessionName.trim() && onStart()}
           className="w-full px-4 py-3 rounded-xl text-sm outline-none"
           style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", fontSize: "16px" }} autoFocus />
       </div>
       <div className="flex justify-between mt-4">
-        <button onClick={onBack} className="px-6 py-3 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>← Back</button>
+        <button onClick={onBack} className="px-6 py-3 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>{t.arena.back}</button>
         <button onClick={onStart} disabled={!sessionName.trim() || loading}
           className="px-8 py-3 rounded-full font-bold text-sm transition-opacity"
           style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: !sessionName.trim() || loading ? 0.4 : 1, cursor: !sessionName.trim() ? "not-allowed" : "pointer" }}>
-          {loading ? "Loading questions…" : "Start Game 🚀"}
+          {loading ? t.arena.loadingQuestions : t.arena.startGame}
         </button>
       </div>
     </div>
@@ -333,19 +365,22 @@ function SessionSetup({ sessionName, onChange, onBack, onStart, loading, error }
 
 function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGame }:
   { board: BoardCell[][]; teams: Team[]; gameMode: GameMode; sessionName: string; onSelectCell: (c: BoardCell) => void; onEndGame: () => void }) {
+  const { t, lang } = useLanguage();
   const answered = board.flat().filter((c) => c.answered).length;
   const total    = board.flat().length;
   const rows     = board[0]?.length ?? 0;
+  // Pick the right category label per active language
+  const labelFor = (cell: BoardCell) => (lang === "ar" && cell.category_ar ? cell.category_ar : cell.category);
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-extrabold" style={{ color: "#e8d5a0" }}>{sessionName}</h2>
-          <p className="text-xs mt-0.5" style={{ color: "#e8d5a0", opacity: 0.5 }}>{answered}/{total} answered</p>
+          <p className="text-xs mt-0.5" style={{ color: "#e8d5a0", opacity: 0.5 }}>{answered}/{total} {t.arena.answered}</p>
         </div>
         <button onClick={onEndGame} className="px-4 py-2 rounded-full text-xs font-bold"
           style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed", color: "#a78bfa" }}>
-          End Game
+          {t.arena.endGame}
         </button>
       </div>
       {gameMode === "team" && teams.length > 0 && (
@@ -367,9 +402,16 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           minmax(72px,1fr) and horizontal scroll if needed. */}
       {board.length === 1 ? (
         <div className="overflow-auto max-h-[75vh]">
-          <div className="px-4 py-3 rounded-xl text-center text-sm font-bold uppercase tracking-wide mb-3"
-            style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
-            {board[0][0].category}
+          <div className="rounded-xl overflow-hidden mb-3"
+            style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
+            {board[0][0].category_image_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={board[0][0].category_image_url} alt=""
+                className="w-full h-32 object-cover" />
+            )}
+            <div className="px-4 py-3 text-center text-sm font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>
+              {labelFor(board[0][0])}
+            </div>
           </div>
           <div className="grid gap-2"
             style={{ gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))" }}>
@@ -394,9 +436,16 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
             <div className="grid gap-2"
               style={{ gridTemplateColumns: `repeat(${board.length}, minmax(72px, 1fr))` }}>
               {board.map((col) => (
-                <div key={col[0].category} className="px-3 py-3 rounded-xl text-center text-xs md:text-sm font-bold uppercase tracking-wide"
-                  style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
-                  {col[0].category}
+                <div key={col[0].category} className="rounded-xl overflow-hidden"
+                  style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
+                  {col[0].category_image_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={col[0].category_image_url} alt=""
+                      className="w-full h-16 md:h-20 object-cover" />
+                  )}
+                  <div className="px-2 py-2 md:px-3 md:py-3 text-center text-xs md:text-sm font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>
+                    {labelFor(col[0])}
+                  </div>
                 </div>
               ))}
             </div>
@@ -550,9 +599,12 @@ function ReportModal({ cell, onClose }: { cell: BoardCell; onClose: () => void }
 // ─── Question View ────────────────────────────────────────────────────────────
 
 function QuestionView({ cell, tickUrl, onReveal, onReport }: { cell: BoardCell; tickUrl: string; onReveal: () => void; onReport: () => void }) {
+  const { t, lang } = useLanguage();
   const [timeLeft, setTimeLeft] = useState(60);
   const [expired,  setExpired]  = useState(false);
   const tickRef = useRef<HTMLAudioElement | null>(null);
+  const questionText = lang === "ar" && cell.question_ar ? cell.question_ar : cell.question;
+  const categoryText = lang === "ar" && cell.category_ar ? cell.category_ar : cell.category;
 
   // Start tick audio when question is shown
   useEffect(() => {
@@ -587,19 +639,19 @@ function QuestionView({ cell, tickUrl, onReveal, onReport }: { cell: BoardCell; 
   return (
     <div className="flex flex-col gap-6 items-center text-center">
       <div className="flex items-center gap-3 flex-wrap justify-center">
-        <span className="px-3 py-1 rounded-full text-xs font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{cell.category}</span>
-        <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{cell.points.toLocaleString()} pts</span>
-        <button onClick={onReport} title="Report this question"
+        <span className="px-3 py-1 rounded-full text-xs font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{categoryText}</span>
+        <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{cell.points.toLocaleString()}</span>
+        <button onClick={onReport} title={t.arena.report}
           className="px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1"
           style={{ backgroundColor: "#dc262622", border: "1px solid #dc262644", color: "#f87171" }}>
-          ⚠️ Report
+          {t.arena.report}
         </button>
       </div>
       <div className="flex flex-col items-center gap-2 w-full">
         <div className="w-full h-2 rounded-full" style={{ backgroundColor: "#2e2050" }}>
           <div className="h-2 rounded-full transition-all" style={{ width: `${(timeLeft / 60) * 100}%`, backgroundColor: timerColor }} />
         </div>
-        <span className="text-3xl font-extrabold tabular-nums" style={{ color: expired ? "#ef4444" : timerColor }}>{expired ? "⏰ Time!" : `${timeLeft}s`}</span>
+        <span className="text-3xl font-extrabold tabular-nums" style={{ color: expired ? "#ef4444" : timerColor }}>{expired ? t.arena.timesUp : `${timeLeft}s`}</span>
       </div>
       <div className="w-full rounded-2xl p-6 md:p-8 flex flex-col gap-4" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
         {cell.image_url && (
@@ -608,9 +660,9 @@ function QuestionView({ cell, tickUrl, onReveal, onReport }: { cell: BoardCell; 
             className="w-full max-h-72 object-contain rounded-xl"
             style={{ backgroundColor: "#120d1f" }} />
         )}
-        <p className="text-xl md:text-2xl font-bold leading-snug" style={{ color: "#e8d5a0" }}>{cell.question}</p>
+        <p className="text-xl md:text-2xl font-bold leading-snug" style={{ color: "#e8d5a0" }}>{questionText}</p>
       </div>
-      <button onClick={handleReveal} className="px-10 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>Reveal Answer</button>
+      <button onClick={handleReveal} className="px-10 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>{t.arena.revealAnswer}</button>
     </div>
   );
 }
@@ -619,44 +671,48 @@ function QuestionView({ cell, tickUrl, onReveal, onReport }: { cell: BoardCell; 
 
 function AnswerReveal({ cell, teams, gameMode, onAward, onNoOne, onReport }:
   { cell: BoardCell; teams: Team[]; gameMode: GameMode; onAward: (id: number | null) => void; onNoOne: () => void; onReport: () => void }) {
+  const { t, lang } = useLanguage();
+  const questionText = lang === "ar" && cell.question_ar ? cell.question_ar : cell.question;
+  const answerText   = lang === "ar" && cell.answer_ar   ? cell.answer_ar   : cell.answer;
+  const categoryText = lang === "ar" && cell.category_ar ? cell.category_ar : cell.category;
   return (
     <div className="flex flex-col gap-6 items-center text-center">
       <div className="flex items-center gap-3 flex-wrap justify-center">
-        <span className="px-3 py-1 rounded-full text-xs font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{cell.category}</span>
-        <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{cell.points.toLocaleString()} pts</span>
-        <button onClick={onReport} title="Report this question"
+        <span className="px-3 py-1 rounded-full text-xs font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{categoryText}</span>
+        <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{cell.points.toLocaleString()}</span>
+        <button onClick={onReport} title={t.arena.report}
           className="px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1"
           style={{ backgroundColor: "#dc262622", border: "1px solid #dc262644", color: "#f87171" }}>
-          ⚠️ Report
+          {t.arena.report}
         </button>
       </div>
       <div className="w-full rounded-2xl p-6" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
-        <p className="text-sm mb-4" style={{ color: "#e8d5a0", opacity: 0.55 }}>The question was:</p>
+        <p className="text-sm mb-4" style={{ color: "#e8d5a0", opacity: 0.55 }}>{t.arena.questionWas}</p>
         {cell.image_url && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={cell.image_url} alt=""
             className="w-full max-h-56 object-contain rounded-xl mb-4"
             style={{ backgroundColor: "#120d1f" }} />
         )}
-        <p className="text-base italic mb-6" style={{ color: "#e8d5a0", opacity: 0.8 }}>{cell.question}</p>
+        <p className="text-base italic mb-6" style={{ color: "#e8d5a0", opacity: 0.8 }}>{questionText}</p>
         <div className="h-px mb-6" style={{ backgroundColor: "#2e2050" }} />
-        <p className="text-sm mb-2 font-bold" style={{ color: "#d4860a" }}>✓ Correct Answer</p>
-        <p className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>{cell.answer}</p>
+        <p className="text-sm mb-2 font-bold" style={{ color: "#d4860a" }}>{t.arena.correctAnswer}</p>
+        <p className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>{answerText}</p>
       </div>
       {gameMode === "team" ? (
         <div className="w-full flex flex-col gap-3">
-          <p className="text-sm font-medium" style={{ color: "#e8d5a0", opacity: 0.7 }}>Who answered correctly?</p>
+          <p className="text-sm font-medium" style={{ color: "#e8d5a0", opacity: 0.7 }}>{t.arena.whoCorrect}</p>
           <div className="grid grid-cols-2 gap-2">
             {teams.map((team) => (
               <button key={team.id} onClick={() => onAward(team.id)} className="py-3 px-4 rounded-xl font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>{team.name}</button>
             ))}
           </div>
-          <button onClick={onNoOne} className="w-full py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0", opacity: 0.7 }}>Nobody got it</button>
+          <button onClick={onNoOne} className="w-full py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0", opacity: 0.7 }}>{t.arena.nobody}</button>
         </div>
       ) : (
         <div className="flex gap-3">
-          <button onClick={() => onAward(null)} className="px-8 py-3 rounded-full font-bold text-sm" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>✓ I got it! (+{cell.points})</button>
-          <button onClick={onNoOne} className="px-8 py-3 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0", opacity: 0.7 }}>Missed it</button>
+          <button onClick={() => onAward(null)} className="px-8 py-3 rounded-full font-bold text-sm" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>{t.arena.iGotIt} (+{cell.points})</button>
+          <button onClick={onNoOne} className="px-8 py-3 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0", opacity: 0.7 }}>{t.arena.missedIt}</button>
         </div>
       )}
     </div>
@@ -667,15 +723,16 @@ function AnswerReveal({ cell, teams, gameMode, onAward, onNoOne, onReport }:
 
 function ResultsScreen({ teams, gameMode, soloScore, sessionName, onPlayAgain }:
   { teams: Team[]; gameMode: GameMode; soloScore: number; sessionName: string; onPlayAgain: () => void }) {
+  const { t } = useLanguage();
   const sorted = [...teams].sort((a, b) => b.score - a.score);
   return (
     <div className="flex flex-col gap-6 items-center text-center">
       <div className="text-5xl">🏆</div>
-      <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Game Over!</h2>
-      <p className="text-sm" style={{ color: "#e8d5a0", opacity: 0.6 }}>Session: {sessionName}</p>
+      <h2 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>{t.arena.gameOver}</h2>
+      <p className="text-sm" style={{ color: "#e8d5a0", opacity: 0.6 }}>{t.arena.session} {sessionName}</p>
       {gameMode === "solo" ? (
         <div className="rounded-2xl p-8 w-full" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
-          <p className="text-sm mb-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>Your Final Score</p>
+          <p className="text-sm mb-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>{t.arena.finalScore}</p>
           <p className="text-5xl font-extrabold" style={{ color: "#d4860a" }}>{soloScore.toLocaleString()}</p>
         </div>
       ) : (
@@ -693,8 +750,8 @@ function ResultsScreen({ teams, gameMode, soloScore, sessionName, onPlayAgain }:
         </div>
       )}
       <div className="flex gap-3 mt-2">
-        <button onClick={onPlayAgain} className="px-8 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>Play Again</button>
-        <Link href="/" className="px-8 py-3 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>Home</Link>
+        <button onClick={onPlayAgain} className="px-8 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>{t.arena.playAgain}</button>
+        <Link href="/" className="px-8 py-3 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>{t.arena.home}</Link>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import "./globals.css";
 import BgMusic from "@/components/BgMusic";
 import AdminButton from "@/components/AdminButton";
 import AfkMonitor from "@/components/AfkMonitor";
+import { LanguageProvider } from "@/components/LanguageProvider";
 
 const geist = Geist({
   variable: "--font-geist-sans",
@@ -23,10 +24,12 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geist.variable} h-full`}>
       <body className="min-h-full flex flex-col antialiased" style={{ backgroundColor: "#120d1f", color: "#e8d5a0" }}>
-        {children}
-        <BgMusic />
-        <AdminButton />
-        <AfkMonitor />
+        <LanguageProvider>
+          {children}
+          <BgMusic />
+          <AdminButton />
+          <AfkMonitor />
+        </LanguageProvider>
       </body>
     </html>
   );

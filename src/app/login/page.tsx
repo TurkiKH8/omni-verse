@@ -2,10 +2,11 @@
 
 import { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { useLanguage } from "@/components/LanguageProvider";
 
 function EyeOpen() {
   return (
@@ -26,9 +27,9 @@ function EyeOff() {
 }
 
 function LoginForm() {
-  const router       = useRouter();
   const searchParams = useSearchParams();
   const next         = searchParams.get("next") ?? "/";
+  const { t }        = useLanguage();
 
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
@@ -108,8 +109,8 @@ function LoginForm() {
   return (
     <div className="w-full max-w-md flex flex-col gap-6">
       <div className="text-center">
-        <h1 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Welcome Back</h1>
-        <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>Log in to your Omni-Verse account</p>
+        <h1 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>{t.login.welcome}</h1>
+        <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>{t.login.subtitle}</p>
       </div>
 
       <div className="rounded-2xl p-8 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
@@ -120,7 +121,7 @@ function LoginForm() {
         )}
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Email</label>
+          <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{t.login.email}</label>
           <input
             type="email"
             placeholder="you@example.com"
@@ -134,8 +135,8 @@ function LoginForm() {
 
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Password</label>
-            <Link href="/forgot-password" className="text-xs" style={{ color: "#d4860a" }}>Forgot password?</Link>
+            <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{t.login.password}</label>
+            <Link href="/forgot-password" className="text-xs" style={{ color: "#d4860a" }}>{t.login.forgotPass}</Link>
           </div>
           <div className="relative">
             <input
@@ -166,13 +167,13 @@ function LoginForm() {
           className="w-full py-3 rounded-full font-bold text-sm mt-1 transition-opacity"
           style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: loading || !email || !password ? 0.5 : 1 }}
         >
-          {loading ? "Logging in…" : "Log In"}
+          {loading ? t.login.loggingIn : t.login.logIn}
         </button>
       </div>
 
       <p className="text-center text-sm" style={{ color: "#e8d5a0", opacity: 0.6 }}>
-        Don&apos;t have an account?{" "}
-        <Link href="/signup" style={{ color: "#d4860a" }} className="font-medium">Sign Up</Link>
+        {t.login.noAccount}{" "}
+        <Link href="/signup" style={{ color: "#d4860a" }} className="font-medium">{t.login.signUpLink}</Link>
       </p>
     </div>
   );

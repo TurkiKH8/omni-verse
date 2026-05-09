@@ -154,7 +154,7 @@ export default function QuestionsPage() {
   };
 
   const handleSave = async () => {
-    if (!form.question_en.trim() || !form.answer_en.trim()) return;
+    if (!form.question_en.trim() || !form.answer_en.trim() || !form.question_ar.trim() || !form.answer_ar.trim()) return;
     setSaving(true);
     setImageError("");
 
@@ -325,20 +325,20 @@ export default function QuestionsPage() {
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Question (English)</label>
-              <textarea value={form.question_en} onChange={(e) => setForm({ ...form, question_en: e.target.value })} rows={3} className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Question (English) <span style={{ color: "#f87171" }}>*</span></label>
+              <textarea value={form.question_en} onChange={(e) => setForm({ ...form, question_en: e.target.value })} rows={3} required className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Answer (English)</label>
-              <input type="text" value={form.answer_en} onChange={(e) => setForm({ ...form, answer_en: e.target.value })} className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Answer (English) <span style={{ color: "#f87171" }}>*</span></label>
+              <input type="text" value={form.answer_en} onChange={(e) => setForm({ ...form, answer_en: e.target.value })} required className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Question (Arabic) <span style={{ opacity: 0.4 }}>optional</span></label>
-              <textarea value={form.question_ar} onChange={(e) => setForm({ ...form, question_ar: e.target.value })} rows={2} className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", direction: "rtl" }} />
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Question (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
+              <textarea value={form.question_ar} onChange={(e) => setForm({ ...form, question_ar: e.target.value })} rows={2} required className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", direction: "rtl" }} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Answer (Arabic) <span style={{ opacity: 0.4 }}>optional</span></label>
-              <input type="text" value={form.answer_ar} onChange={(e) => setForm({ ...form, answer_ar: e.target.value })} className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", direction: "rtl" }} />
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Answer (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
+              <input type="text" value={form.answer_ar} onChange={(e) => setForm({ ...form, answer_ar: e.target.value })} required className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", direction: "rtl" }} />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Question Image <span style={{ opacity: 0.4 }}>optional · PNG / JPG</span></label>
@@ -373,9 +373,14 @@ export default function QuestionsPage() {
             </div>
             <div className="flex gap-3 mt-2">
               <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: saving ? 0.5 : 1 }}>
-                {saving ? "Saving…" : editId ? "Save Changes" : "Add Question"}
-              </button>
+              {(() => {
+                const allFilled = form.question_en.trim() && form.answer_en.trim() && form.question_ar.trim() && form.answer_ar.trim();
+                return (
+                  <button onClick={handleSave} disabled={saving || !allFilled} className="flex-1 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: (saving || !allFilled) ? 0.4 : 1, cursor: (saving || !allFilled) ? "not-allowed" : "pointer" }}>
+                    {saving ? "Saving…" : editId ? "Save Changes" : "Add Question"}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>

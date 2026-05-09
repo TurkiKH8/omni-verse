@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { useLanguage } from "@/components/LanguageProvider";
 
 function EyeOpen() {
   return (
@@ -25,7 +25,7 @@ function EyeOff() {
 }
 
 export default function SignupPage() {
-  const router = useRouter();
+  const { t } = useLanguage();
   const [name,         setName]         = useState("");
   const [email,        setEmail]        = useState("");
   const [password,     setPassword]     = useState("");
@@ -39,8 +39,8 @@ export default function SignupPage() {
 
   const handleSignup = async () => {
     if (!name || !email || !password) return;
-    if (password !== confirm) { setError("Passwords do not match."); return; }
-    if (password.length < 6)  { setError("Password must be at least 6 characters."); return; }
+    if (password !== confirm) { setError(t.signup.passMismatch); return; }
+    if (password.length < 6)  { setError(t.signup.passShort);    return; }
     setLoading(true);
     setError("");
 
@@ -53,7 +53,7 @@ export default function SignupPage() {
     const result = await res.json();
 
     if (!res.ok) {
-      setError(result.error || "Something went wrong. Please try again.");
+      setError(result.error || t.signup.tryAgain);
       setLoading(false);
       return;
     }
@@ -73,18 +73,18 @@ export default function SignupPage() {
         <main className="flex-1 flex items-center justify-center px-6 py-16 relative z-10">
           <div className="w-full max-w-md text-center flex flex-col items-center gap-5">
             <div className="text-5xl">📧</div>
-            <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Check Your Email</h2>
+            <h2 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>{t.signup.checkInbox}</h2>
             <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.65 }}>
-              We sent a confirmation link to{" "}
+              {t.signup.sentLinkA}{" "}
               <strong style={{ color: "#d4860a" }}>{email}</strong>.<br />
-              Click it to activate your account and receive your{" "}
-              <strong style={{ color: "#d4860a" }}>3 free coins</strong>.
+              {t.signup.sentLinkB}{" "}
+              <strong style={{ color: "#d4860a" }}>{t.signup.freeCoins}</strong>.
             </p>
             <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.4 }}>
-              Didn&apos;t receive it? Check your spam folder.
+              {t.signup.checkSpam}
             </p>
             <Link href="/login" className="px-8 py-3 rounded-full font-bold text-sm" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-              Go to Log In →
+              {t.signup.goLogin}
             </Link>
           </div>
         </main>
@@ -125,8 +125,8 @@ export default function SignupPage() {
       <main className="flex-1 flex items-center justify-center px-6 py-16 relative z-10">
         <div className="w-full max-w-md flex flex-col gap-6">
           <div className="text-center">
-            <h1 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>Create Account</h1>
-            <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>Join the Omni-Verse trivia community</p>
+            <h1 className="text-3xl font-extrabold" style={{ color: "#e8d5a0" }}>{t.signup.title}</h1>
+            <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>{t.signup.subtitle}</p>
           </div>
 
           <div className="rounded-2xl p-8 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
@@ -138,10 +138,10 @@ export default function SignupPage() {
 
             {/* Full Name */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Full Name</label>
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{t.signup.fullName}</label>
               <input
                 type="text"
-                placeholder="Your name"
+                placeholder={t.signup.yourName}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl text-sm outline-none"
@@ -151,7 +151,7 @@ export default function SignupPage() {
 
             {/* Email */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Email</label>
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{t.signup.email}</label>
               <input
                 type="email"
                 placeholder="you@example.com"
@@ -164,7 +164,7 @@ export default function SignupPage() {
 
             {/* Password */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Password</label>
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{t.signup.password}</label>
               <div className="relative">
                 <input
                   type={showPass ? "text" : "password"}
@@ -189,7 +189,7 @@ export default function SignupPage() {
 
             {/* Confirm Password */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Confirm Password</label>
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{t.signup.confirmPass}</label>
               <div className="relative">
                 <input
                   type={showConfirm ? "text" : "password"}
@@ -219,13 +219,13 @@ export default function SignupPage() {
               className="w-full py-3 rounded-full font-bold text-sm mt-1 transition-opacity"
               style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: loading ? 0.5 : 1 }}
             >
-              {loading ? "Creating account…" : "Create Account"}
+              {loading ? t.signup.creating : t.signup.create}
             </button>
           </div>
 
           <p className="text-center text-sm" style={{ color: "#e8d5a0", opacity: 0.6 }}>
-            Already have an account?{" "}
-            <Link href="/login" style={{ color: "#d4860a" }} className="font-medium">Log In</Link>
+            {t.signup.haveAccount}{" "}
+            <Link href="/login" style={{ color: "#d4860a" }} className="font-medium">{t.signup.logInLink}</Link>
           </p>
         </div>
       </main>

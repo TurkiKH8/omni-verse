@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
+import { useLanguage } from "@/components/LanguageProvider";
 
 // Pages where AFK monitor is DISABLED (game pages)
 const AFK_EXCLUDED_PREFIXES = ["/arena", "/admin"];
@@ -13,6 +14,7 @@ const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "touchstart", "scr
 
 export default function AfkMonitor() {
   const pathname = usePathname();
+  const { t } = useLanguage();
   const [showPrompt, setShowPrompt]   = useState(false);
   const timeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thresholdRef   = useRef(INITIAL_TIMEOUT_MS);
@@ -73,10 +75,10 @@ export default function AfkMonitor() {
 
         <div>
           <h2 className="text-xl font-extrabold" style={{ color: "#e8d5a0" }}>
-            Hi, are you still here?
+            {t.afk.title}
           </h2>
           <p className="text-sm mt-2" style={{ color: "#e8d5a0", opacity: 0.6 }}>
-            You&apos;ve been away for a while. Let us know you&apos;re still around!
+            {t.afk.hint}
           </p>
         </div>
 
@@ -85,7 +87,7 @@ export default function AfkMonitor() {
           className="w-full py-3 rounded-full font-bold text-sm hover:opacity-90 transition-opacity"
           style={{ backgroundColor: "#d4860a", color: "#120d1f" }}
         >
-          I&apos;m here! 👍
+          {t.afk.stillHere}
         </button>
       </div>
     </div>

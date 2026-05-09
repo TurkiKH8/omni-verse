@@ -4,19 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
-
-const navLinks = [
-  { label: "Home",     href: "/" },
-  { label: "Arena",   href: "/arena" },
-  { label: "About Us", href: "/about" },
-  { label: "Buy",     href: "/buy" },
-];
+import { useLanguage } from "@/components/LanguageProvider";
+import LanguageToggle from "@/components/LanguageToggle";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const { t } = useLanguage();
   const [menuOpen, setMenuOpen] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [coins,    setCoins]    = useState<number | null>(null);
+
+  // Built per-render so labels respond immediately to language changes
+  const navLinks = [
+    { label: t.nav.home,  href: "/" },
+    { label: t.nav.arena, href: "/arena" },
+    { label: t.nav.about, href: "/about" },
+    { label: t.nav.buy,   href: "/buy" },
+  ];
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -147,6 +151,7 @@ export default function Navbar() {
 
       {/* Desktop Auth — Login/Sign Up shown immediately; swaps to username once session loads */}
       <div className="hidden md:flex items-center gap-3">
+        <LanguageToggle />
         {username ? (
           <div className="flex items-center gap-4">
             {coins !== null && (
@@ -156,13 +161,13 @@ export default function Navbar() {
               </span>
             )}
             <span className="text-sm" style={{ color: "#e8d5a0" }}>
-              Hi,{" "}
+              {t.nav.hi}{" "}
               <span className="font-bold" style={{ color: "#d4860a" }}>{username}</span>
             </span>
             <button onClick={handleSignOut}
               className="px-5 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-80"
               style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>
-              Sign Out
+              {t.nav.signOut}
             </button>
           </div>
         ) : (
@@ -170,23 +175,26 @@ export default function Navbar() {
             <Link href="/login"
               className="px-5 py-2 rounded-full text-sm font-medium"
               style={{ border: "1px solid #d4860a", color: "#d4860a" }}>
-              Login
+              {t.nav.login}
             </Link>
             <Link href="/signup"
               className="px-5 py-2 rounded-full text-sm font-bold hover:opacity-90"
               style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-              Sign Up
+              {t.nav.signup}
             </Link>
           </>
         )}
       </div>
 
-      {/* Mobile Hamburger */}
-      <button className="md:hidden flex flex-col gap-1.5 p-2" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu">
-        <span className="block w-6 h-0.5" style={{ backgroundColor: "#e8d5a0" }} />
-        <span className="block w-6 h-0.5" style={{ backgroundColor: "#e8d5a0" }} />
-        <span className="block w-6 h-0.5" style={{ backgroundColor: "#e8d5a0" }} />
-      </button>
+      {/* Mobile language toggle + hamburger — language always reachable on phones */}
+      <div className="md:hidden flex items-center gap-2">
+        <LanguageToggle />
+        <button className="flex flex-col gap-1.5 p-2" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu">
+          <span className="block w-6 h-0.5" style={{ backgroundColor: "#e8d5a0" }} />
+          <span className="block w-6 h-0.5" style={{ backgroundColor: "#e8d5a0" }} />
+          <span className="block w-6 h-0.5" style={{ backgroundColor: "#e8d5a0" }} />
+        </button>
+      </div>
 
       {/* Mobile Menu */}
       {menuOpen && (
@@ -204,7 +212,7 @@ export default function Navbar() {
             <div className="flex flex-col gap-3 mt-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm" style={{ color: "#e8d5a0" }}>
-                  Hi, <span className="font-bold" style={{ color: "#d4860a" }}>{username}</span>
+                  {t.nav.hi} <span className="font-bold" style={{ color: "#d4860a" }}>{username}</span>
                 </p>
                 {coins !== null && (
                   <span className="flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold"
@@ -216,7 +224,7 @@ export default function Navbar() {
               <button onClick={() => { setMenuOpen(false); handleSignOut(); }}
                 className="w-full text-center px-4 py-2 rounded-full text-sm font-medium"
                 style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>
-                Sign Out
+                {t.nav.signOut}
               </button>
             </div>
           ) : (
@@ -224,12 +232,12 @@ export default function Navbar() {
               <Link href="/login" onClick={() => setMenuOpen(false)}
                 className="flex-1 text-center px-4 py-2 rounded-full text-sm font-medium"
                 style={{ border: "1px solid #d4860a", color: "#d4860a" }}>
-                Login
+                {t.nav.login}
               </Link>
               <Link href="/signup" onClick={() => setMenuOpen(false)}
                 className="flex-1 text-center px-4 py-2 rounded-full text-sm font-bold"
                 style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-                Sign Up
+                {t.nav.signup}
               </Link>
             </div>
           )}

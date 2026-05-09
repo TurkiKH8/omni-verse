@@ -120,7 +120,7 @@ export default function CategoriesPage() {
   };
 
   const handleSave = async () => {
-    if (!formName.trim()) return;
+    if (!formName.trim() || !formNameAr.trim()) return;
     setSaving(true);
     setImageError("");
 
@@ -259,12 +259,12 @@ export default function CategoriesPage() {
           <div className="w-full max-w-md rounded-2xl p-7 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
             <h2 className="text-lg font-extrabold" style={{ color: "#e8d5a0" }}>{editId ? "Edit Category" : "New Category"}</h2>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Name (English)</label>
-              <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Science" className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} autoFocus />
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Name (English) <span style={{ color: "#f87171" }}>*</span></label>
+              <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Science" required className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} autoFocus />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Name (Arabic)</label>
-              <input type="text" value={formNameAr} onChange={(e) => setFormNameAr(e.target.value)} placeholder="مثال: العلوم" className="w-full px-4 py-3 rounded-xl text-sm outline-none text-right" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", direction: "rtl" }} />
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Name (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
+              <input type="text" value={formNameAr} onChange={(e) => setFormNameAr(e.target.value)} placeholder="مثال: العلوم" required className="w-full px-4 py-3 rounded-xl text-sm outline-none text-right" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", direction: "rtl" }} />
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Cover Image <span style={{ opacity: 0.4 }}>optional · PNG / JPG</span></label>
@@ -299,9 +299,14 @@ export default function CategoriesPage() {
             </div>
             <div className="flex gap-3 mt-2">
               <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: saving ? 0.5 : 1 }}>
-                {saving ? "Saving…" : editId ? "Save Changes" : "Add Category"}
-              </button>
+              {(() => {
+                const allFilled = formName.trim() && formNameAr.trim();
+                return (
+                  <button onClick={handleSave} disabled={saving || !allFilled} className="flex-1 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: (saving || !allFilled) ? 0.4 : 1, cursor: (saving || !allFilled) ? "not-allowed" : "pointer" }}>
+                    {saving ? "Saving…" : editId ? "Save Changes" : "Add Category"}
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
