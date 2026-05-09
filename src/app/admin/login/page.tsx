@@ -88,14 +88,15 @@ export default function AdminLoginPage() {
       }
     } catch { /* localStorage write failed; cookies still work */ }
 
-    // 3) Verify admin/developer access (5s timeout)
-    let profile: { is_admin?: boolean; developer_level?: string | null } | null = null;
+    // 3) Verify admin / developer / staff-rank access (5s timeout)
+    const STAFF_RANKS = ["Omni 1", "Omni 2", "Omni 3", "Master Omni"];
+    let profile: { is_admin?: boolean; developer_level?: string | null; rank?: string | null } | null = null;
     try {
       const profCtrl = new AbortController();
       const profT = setTimeout(() => profCtrl.abort(), 5000);
       const { data } = await supabase
         .from("profiles")
-        .select("is_admin, developer_level")
+        .select("is_admin, developer_level, rank")
         .eq("id", userId)
         .abortSignal(profCtrl.signal)
         .maybeSingle();
@@ -107,17 +108,23 @@ export default function AdminLoginPage() {
       return;
     }
 
-    if (!profile?.is_admin && !profile?.developer_level) {
-      setError("Access denied. This account does not have admin or developer privileges.");
+    const isStaffRank = !!profile?.rank && STAFF_RANKS.includes(profile.rank);
+    if (!profile?.is_admin && !profile?.developer_level && !isStaffRank) {
+      setError("Access denied. This account does not have admin, developer, or staff privileges.");
       setLoading(false);
       return;
     }
 
     // 4) Fire-and-forget audit log
+    const auditTarget = profile?.is_admin
+      ? "Admin"
+      : profile?.developer_level
+        ? `Developer (${profile.developer_level})`
+        : `Staff (${profile?.rank ?? "—"})`;
     void supabase.from("audit_log").insert({
       user_email: email,
       action: "Admin login successful",
-      target: profile.is_admin ? "Admin" : `Developer (${profile.developer_level})`,
+      target: auditTarget,
       type: "login",
     });
 
