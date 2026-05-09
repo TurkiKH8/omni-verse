@@ -1,3 +1,5 @@
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
@@ -15,31 +17,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
     }
 
+    // Use a server-side Supabase client so the session gets persisted as
+    // cookies — proxy.ts (the Next.js 16 middleware) needs them to grant
+    // access to /admin/* routes.
+    const cookieStore = await cookies();
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() { return cookieStore.getAll(); },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch { /* ignore */ }
+        },
+      },
+    });
+
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
 
-    let resp: Response;
+    let result;
     try {
-      resp = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-        method: "POST",
-        headers: { apikey: supabaseKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        signal: ctrl.signal,
-      });
+      result = await supabase.auth.signInWithPassword({ email, password });
     } finally {
       clearTimeout(t);
     }
 
-    const body = await resp.json() as Record<string, unknown>;
+    const { data, error } = result;
 
-    if (!resp.ok) {
-      const msg = (body.error_description || body.msg || body.message || "Invalid login credentials") as string;
-      return NextResponse.json({ error: msg }, { status: resp.status });
+    if (error || !data.session) {
+      const msg = error?.message ?? "Invalid login credentials";
+      return NextResponse.json({ error: msg }, { status: 401 });
     }
 
     return NextResponse.json({
-      access_token: body.access_token as string,
-      refresh_token: body.refresh_token as string,
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      user_id: data.session.user.id,
     });
   } catch (err: unknown) {
     const e = err as { name?: string };

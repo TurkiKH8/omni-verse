@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 
 function EyeOpen() {
@@ -24,7 +23,6 @@ function EyeOff() {
 }
 
 export default function AdminLoginPage() {
-  const router   = useRouter();
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -42,9 +40,11 @@ export default function AdminLoginPage() {
       return;
     }
 
-    // 1) Auth via the server-side route (5s hard timeout, no browser auth lock)
+    // 1) Auth via the server-side route — sets the session cookies that
+    //    proxy.ts needs to grant access to /admin/*
     const ctrl = new AbortController();
-    const hangGuard = setTimeout(() => ctrl.abort(), 5000);
+    const hangGuard = setTimeout(() => ctrl.abort(), 6000);
+    let userId = "";
     let tokens: { access_token: string; refresh_token: string };
     try {
       const resp = await fetch("/api/auth/login", {
@@ -52,14 +52,16 @@ export default function AdminLoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
         signal: ctrl.signal,
+        credentials: "include",
       });
       clearTimeout(hangGuard);
-      const data = await resp.json() as { access_token?: string; refresh_token?: string; error?: string };
-      if (!resp.ok || !data.access_token) {
-        setError("Invalid email or password.");
+      const data = await resp.json() as { access_token?: string; refresh_token?: string; user_id?: string; error?: string };
+      if (!resp.ok || !data.access_token || !data.user_id) {
+        setError(data.error || "Invalid email or password.");
         setLoading(false);
         return;
       }
+      userId = data.user_id;
       tokens = { access_token: data.access_token, refresh_token: data.refresh_token! };
     } catch (err: unknown) {
       clearTimeout(hangGuard);
@@ -69,62 +71,49 @@ export default function AdminLoginPage() {
       return;
     }
 
-    // 2) Install the session client-side (race against 4s in case the lock hangs)
+    // 2) Mirror the session into localStorage so client-side components
+    //    (Navbar, AdminButton, etc.) see it without an extra auth call
     try {
-      await Promise.race([
-        supabase.auth.setSession(tokens),
-        new Promise((_, r) => setTimeout(() => r(new Error("setSession timeout")), 4000)),
-      ]);
-    } catch {
-      // Write directly to localStorage as a fallback so the dashboard sees the session
       const projectRef = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").match(/https?:\/\/([^.]+)\./)?.[1];
       if (projectRef && typeof window !== "undefined") {
-        window.localStorage.setItem(
-          `sb-${projectRef}-auth-token`,
-          JSON.stringify({ ...tokens, token_type: "bearer", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600 })
-        );
+        const payload = JSON.parse(atob(tokens.access_token.split(".")[1])) as { exp?: number; email?: string };
+        window.localStorage.setItem(`sb-${projectRef}-auth-token`, JSON.stringify({
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          token_type: "bearer",
+          expires_in: 3600,
+          expires_at: payload.exp ?? Math.floor(Date.now() / 1000) + 3600,
+          user: { id: userId, email: payload.email },
+        }));
       }
-    }
+    } catch { /* localStorage write failed; cookies still work */ }
 
-    // 3) Decode user id from the JWT (avoids another auth call that could hang)
-    let userId = "";
-    try {
-      const payload = JSON.parse(atob(tokens.access_token.split(".")[1])) as { sub?: string };
-      userId = payload.sub ?? "";
-    } catch { /* ignore */ }
-
-    // 4) Verify admin/developer access (5s timeout, fail closed)
+    // 3) Verify admin/developer access (5s timeout)
     let profile: { is_admin?: boolean; developer_level?: string | null } | null = null;
-    if (userId) {
-      try {
-        const profCtrl = new AbortController();
-        const profT = setTimeout(() => profCtrl.abort(), 5000);
-        const { data } = await supabase
-          .from("profiles")
-          .select("is_admin, developer_level")
-          .eq("id", userId)
-          .abortSignal(profCtrl.signal)
-          .maybeSingle();
-        clearTimeout(profT);
-        profile = data;
-      } catch {
-        setError("Could not verify admin access — please try again.");
-        setLoading(false);
-        return;
-      }
+    try {
+      const profCtrl = new AbortController();
+      const profT = setTimeout(() => profCtrl.abort(), 5000);
+      const { data } = await supabase
+        .from("profiles")
+        .select("is_admin, developer_level")
+        .eq("id", userId)
+        .abortSignal(profCtrl.signal)
+        .maybeSingle();
+      clearTimeout(profT);
+      profile = data;
+    } catch {
+      setError("Could not verify admin access — please try again.");
+      setLoading(false);
+      return;
     }
 
     if (!profile?.is_admin && !profile?.developer_level) {
-      await Promise.race([
-        supabase.auth.signOut(),
-        new Promise((r) => setTimeout(r, 2000)),
-      ]).catch(() => {});
       setError("Access denied. This account does not have admin or developer privileges.");
       setLoading(false);
       return;
     }
 
-    // 5) Audit log entry — fire-and-forget so a slow query never blocks navigation
+    // 4) Fire-and-forget audit log
     void supabase.from("audit_log").insert({
       user_email: email,
       action: "Admin login successful",
@@ -132,7 +121,8 @@ export default function AdminLoginPage() {
       type: "login",
     });
 
-    router.push("/admin/dashboard");
+    // 5) Hard navigation so the browser sends the freshly-set auth cookies
+    window.location.href = "/admin/dashboard";
   };
 
   return (
