@@ -381,7 +381,7 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
   const layout = isSingleCat ? singleCatLayout(board[0].length) : { cols: board.length, rows };
 
   return (
-    <div className="flex-1 flex flex-col gap-3 md:gap-4 min-h-0">
+    <div className="flex flex-col gap-3 md:gap-4">
       {/* Compact header: session info + end-game button */}
       <div className="flex items-center justify-between shrink-0">
         <div className="min-w-0">
@@ -407,31 +407,28 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
         </div>
       )}
 
-      {/* Board fills remaining viewport — no scrollbars. Cells stretch to fit. */}
+      {/* Board sized like Tahdani: big portrait covers + short point pills. */}
       {isSingleCat ? (
-        <div className="flex-1 min-h-0 flex flex-col gap-3">
-          <div className="shrink-0 mx-auto flex flex-col items-center gap-2 rounded-xl overflow-hidden"
-               style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", width: 220 }}>
+        <div className="flex flex-col gap-3">
+          <div className="mx-auto flex flex-col rounded-xl overflow-hidden"
+               style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", width: 260 }}>
             {board[0][0].category_image_url && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={board[0][0].category_image_url} alt=""
-                   className="w-full h-28 md:h-32 object-cover"
+                   className="w-full aspect-[4/5] object-cover"
                    style={{ backgroundColor: "#0d091a" }} />
             )}
-            <span className="pb-2 px-3 text-sm md:text-base font-bold uppercase tracking-wide truncate"
+            <span className="px-3 py-2 text-center text-sm md:text-base font-bold uppercase tracking-wide truncate"
                   style={{ color: "#a78bfa" }}>
               {labelFor(board[0][0])}
             </span>
           </div>
-          <div className="flex-1 min-h-0 grid gap-2"
-               style={{
-                 gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
-                 gridTemplateRows:    `repeat(${layout.rows}, minmax(0, 1fr))`,
-               }}>
+          <div className="grid gap-2 md:gap-3"
+               style={{ gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))` }}>
             {board[0].map((cell, idx) => (
               <button key={`${cell.category}-${cell.points}`}
                 onClick={() => !cell.answered && onSelectCell(cell)}
-                className="rounded-xl text-center font-extrabold text-lg md:text-3xl transition-all flex items-center justify-center"
+                className="py-3 md:py-4 rounded-xl text-center font-extrabold text-base md:text-xl transition-all"
                 style={{
                   backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
                   border: `2px solid ${difficultyBorderColor(idx, rows, cell.answered)}`,
@@ -444,12 +441,9 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 grid gap-2"
-             style={{
-               gridTemplateColumns: `repeat(${board.length}, minmax(0, 1fr))`,
-               gridTemplateRows:    `auto repeat(${rows}, minmax(0, 1fr))`,
-             }}>
-          {/* Column headers (row 1): real cover picture stacked above the name */}
+        <div className="grid gap-2 md:gap-3"
+             style={{ gridTemplateColumns: `repeat(${board.length}, minmax(0, 1fr))` }}>
+          {/* Column headers (row 1): big portrait cover stacked above the name */}
           {board.map((col) => (
             <div key={`hdr-${col[0].category}`}
                  className="rounded-xl flex flex-col overflow-hidden"
@@ -457,23 +451,23 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
               {col[0].category_image_url && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={col[0].category_image_url} alt=""
-                     className="w-full h-20 md:h-28 lg:h-32 object-cover"
+                     className="w-full aspect-[4/5] object-cover"
                      style={{ backgroundColor: "#0d091a" }} />
               )}
-              <span className="px-2 py-2 md:py-2.5 text-center text-xs md:text-sm font-bold uppercase tracking-wide truncate"
+              <span className="px-2 py-2 text-center text-xs md:text-sm font-bold uppercase tracking-wide truncate"
                     style={{ color: "#a78bfa" }}>
                 {labelFor(col[0])}
               </span>
             </div>
           ))}
-          {/* Cells flowed row-major so CSS grid auto-flow places them correctly */}
+          {/* Point cells: short pills, natural fixed height (not stretched) */}
           {Array.from({ length: rows }).flatMap((_, rowIdx) =>
             board.map((col) => {
               const cell = col[rowIdx];
               return (
                 <button key={`${cell.category}-${cell.points}`}
                   onClick={() => !cell.answered && onSelectCell(cell)}
-                  className="rounded-xl text-center font-extrabold text-sm md:text-2xl transition-all flex items-center justify-center"
+                  className="py-2.5 md:py-3 rounded-xl text-center font-extrabold text-base md:text-lg transition-all"
                   style={{
                     backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
                     border: `2px solid ${difficultyBorderColor(rowIdx, rows, cell.answered)}`,
