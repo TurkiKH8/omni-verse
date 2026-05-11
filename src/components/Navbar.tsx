@@ -15,6 +15,9 @@ export default function Navbar() {
   const [username, setUsername] = useState<string | null>(null);
   const [coins,    setCoins]    = useState<number | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  // True when the logged-in user has at least one unfinished game waiting
+  // on /history. Drives the subtle attention pulse on the clock icon.
+  const [hasActiveGame, setHasActiveGame] = useState(false);
 
   // Built per-render so labels respond immediately to language changes
   const navLinks = [
@@ -48,6 +51,23 @@ export default function Navbar() {
       } catch {
         // fallback already set above
       }
+
+      // Separately ask if any unfinished games are waiting for this user.
+      // Filtering by expires_at > now() keeps expired-but-not-yet-flipped
+      // rows from triggering a false flash.
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 4000);
+        const { count } = await supabase
+          .from("sessions")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", userId)
+          .eq("status", "active")
+          .gt("expires_at", new Date().toISOString())
+          .abortSignal(ctrl.signal);
+        clearTimeout(t);
+        setHasActiveGame((count ?? 0) > 0);
+      } catch { /* ignore — no flash, no harm */ }
     };
 
     // Quick initial check — race against 4s timeout so an orphaned auth lock can't hang the navbar
@@ -159,7 +179,7 @@ export default function Navbar() {
             href="/history"
             title={t.nav.history}
             aria-label={t.nav.history}
-            className="flex items-center justify-center w-9 h-9 rounded-full transition-opacity hover:opacity-90"
+            className={`flex items-center justify-center w-9 h-9 rounded-full transition-opacity hover:opacity-90 ${hasActiveGame ? "history-flash" : ""}`}
             style={{ border: "1px solid #2e2050", color: "#e8d5a0", backgroundColor: "#1e1530" }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

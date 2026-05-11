@@ -26,3 +26,14 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* Subtle attention pulse — used on the Navbar history button when the user
+   has any active games waiting to be resumed. Runs exactly twice so it
+   notifies without being annoying. */
+@keyframes history-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 134, 10, 0); border-color: #2e2050; }
+  50%      { box-shadow: 0 0 0 6px rgba(212, 134, 10, 0.35); border-color: #d4860a; }
+}
+.history-flash {
+  animation: history-flash 0.9s ease-in-out 2;
+}

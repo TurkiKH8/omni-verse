@@ -56,6 +56,9 @@ export default function HistoryView() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [now, setNow] = useState<number>(() => Date.now());
+  // Confirmation modal state — null when closed, the session being cancelled otherwise.
+  const [cancelTarget, setCancelTarget] = useState<SessionRow | null>(null);
+  const [cancelling,   setCancelling]   = useState(false);
 
   // Tick once per second so the 24h countdown updates live.
   useEffect(() => {
@@ -103,6 +106,20 @@ export default function HistoryView() {
 
   const handleResume = (id: string) => {
     router.push(`/arena?resume=${id}`);
+  };
+
+  // Cancelling an active game deletes the row outright — coins already spent
+  // are NOT refunded (per product spec). The user is warned by a modal first.
+  const confirmCancel = async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      await supabase.from("sessions").delete().eq("id", cancelTarget.id);
+      setSessions((prev) => prev.filter((s) => s.id !== cancelTarget.id));
+      setCancelTarget(null);
+    } finally {
+      setCancelling(false);
+    }
   };
 
   const active   = sessions.filter((s) => s.status === "active");
@@ -174,11 +191,18 @@ export default function HistoryView() {
                         {formatHMS(remaining, t.history)}
                       </p>
                     </div>
-                    <button onClick={() => handleResume(s.id)}
-                      className="px-5 py-2.5 rounded-full font-bold text-sm hover:opacity-90 transition-opacity shrink-0"
-                      style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-                      {t.history.resume}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={() => handleResume(s.id)}
+                        className="px-5 py-2.5 rounded-full font-bold text-sm hover:opacity-90 transition-opacity"
+                        style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
+                        {t.history.resume}
+                      </button>
+                      <button onClick={() => setCancelTarget(s)}
+                        className="px-4 py-2.5 rounded-full font-medium text-sm hover:opacity-90 transition-opacity"
+                        style={{ backgroundColor: "transparent", color: "#f87171", border: "1px solid #dc262666" }}>
+                        {t.history.cancel}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -242,6 +266,42 @@ export default function HistoryView() {
           </div>
         )}
       </section>
+
+      {/* ─── Cancel confirmation modal ─────────────────────────────────── */}
+      {cancelTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+             style={{ backgroundColor: "#00000099" }}>
+          <div className="w-full max-w-md rounded-2xl p-6 md:p-7 flex flex-col gap-5"
+               style={{ backgroundColor: "#1e1530", border: "1px solid #dc262666" }}>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">⚠️</span>
+              <h3 className="font-bold text-lg" style={{ color: "#f87171" }}>{t.history.cancelTitle}</h3>
+            </div>
+            <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0" }}>
+              {t.history.cancelBodyA}{" "}
+              <strong style={{ color: "#d4860a" }}>&ldquo;{cancelTarget.name}&rdquo;</strong>
+              {t.history.cancelBodyB}{" "}
+              <strong style={{ color: "#d4860a" }}>{cancelTarget.category_names.length}</strong>{" "}
+              {t.history.cancelBodyC}{cancelTarget.category_names.length === 1 ? "" : "s"}{" "}
+              {t.history.cancelBodyD}
+              <br />
+              <span className="text-xs" style={{ color: "#e8d5a0", opacity: 0.55 }}>{t.history.cancelBodyE}</span>
+            </p>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
+              <button onClick={() => setCancelTarget(null)} disabled={cancelling}
+                className="px-5 py-2.5 rounded-full text-sm font-medium"
+                style={{ border: "1px solid #2e2050", color: "#e8d5a0", cursor: cancelling ? "not-allowed" : "pointer" }}>
+                {t.history.cancelNo}
+              </button>
+              <button onClick={confirmCancel} disabled={cancelling}
+                className="px-5 py-2.5 rounded-full text-sm font-bold transition-opacity"
+                style={{ backgroundColor: "#dc2626", color: "#ffffff", opacity: cancelling ? 0.6 : 1, cursor: cancelling ? "not-allowed" : "pointer" }}>
+                {cancelling ? t.history.cancelling : t.history.cancelYes}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
