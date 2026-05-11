@@ -275,7 +275,7 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} {t.arena.questionsEach}</span>}
         </p>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5 md:gap-7 lg:gap-10">
         {categories.map((cat) => {
           const isSelected = selected.includes(cat.name);
           const disabled   = !isSelected && selected.length >= 6;
@@ -430,7 +430,7 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
   const layout = isSingleCat ? singleCatLayout(board[0].length) : { cols: board.length, rows };
 
   return (
-    <div className="flex flex-col gap-3 md:gap-4">
+    <div className="flex-1 flex flex-col gap-3 md:gap-4 min-h-0">
       {/* Compact header: session info + end-game button */}
       <div className="flex items-center justify-between shrink-0">
         <div className="min-w-0">
@@ -456,28 +456,35 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
         </div>
       )}
 
-      {/* Board sized like Tahdani: big portrait covers + short point pills. */}
+      {/* Board: fills the remaining viewport height so every category-count
+          (2 / 3 / 4 / 5 / 6) lays out without scrolling. Cells use flex-1
+          to share whatever space is left after the cover image. Cover image
+          is capped at a viewport-relative height so it never dominates when
+          fewer categories are picked (which yields wider columns). */}
       {isSingleCat ? (
-        <div className="flex flex-col gap-3">
-          <div className="mx-auto flex flex-col rounded-xl overflow-hidden"
-               style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", width: 260 }}>
+        <div className="flex-1 flex flex-col gap-3 min-h-0">
+          <div className="shrink-0 mx-auto flex flex-col rounded-xl overflow-hidden"
+               style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", width: 220 }}>
             {board[0][0].category_image_url && (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={board[0][0].category_image_url} alt=""
                    className="w-full aspect-[4/5] object-cover"
-                   style={{ backgroundColor: "#0d091a" }} />
+                   style={{ backgroundColor: "#0d091a", maxHeight: "26vh" }} />
             )}
             <span className="px-3 py-2 text-center text-sm md:text-base font-bold uppercase tracking-wide truncate"
                   style={{ color: "#a78bfa" }}>
               {labelFor(board[0][0])}
             </span>
           </div>
-          <div className="grid gap-2 md:gap-3"
-               style={{ gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))` }}>
+          <div className="flex-1 min-h-0 grid gap-2 md:gap-3"
+               style={{
+                 gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
+                 gridTemplateRows:    `repeat(${layout.rows}, minmax(0, 1fr))`,
+               }}>
             {board[0].map((cell, idx) => (
               <button key={`${cell.category}-${cell.points}`}
                 onClick={() => !cell.answered && onSelectCell(cell)}
-                className="py-3 md:py-4 rounded-xl text-center font-extrabold text-base md:text-xl transition-all"
+                className="rounded-xl text-center font-extrabold text-base md:text-xl flex items-center justify-center transition-all"
                 style={{
                   backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
                   border: `2px solid ${difficultyBorderColor(idx, rows, cell.answered)}`,
@@ -490,44 +497,43 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           </div>
         </div>
       ) : (
-        <div className="grid gap-2 md:gap-3"
+        <div className="flex-1 min-h-0 grid gap-2 md:gap-3"
              style={{ gridTemplateColumns: `repeat(${board.length}, minmax(0, 1fr))` }}>
-          {/* Column headers (row 1): big portrait cover stacked above the name */}
+          {/* Each column is its own flex column so the cover stays a fixed
+              portion at the top and the point cells share the remaining
+              vertical space equally — same look for 6, 5, 4, 3, 2 cats. */}
           {board.map((col) => (
-            <div key={`hdr-${col[0].category}`}
-                 className="rounded-xl flex flex-col overflow-hidden"
-                 style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
-              {col[0].category_image_url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={col[0].category_image_url} alt=""
-                     className="w-full aspect-[4/5] object-cover"
-                     style={{ backgroundColor: "#0d091a" }} />
-              )}
-              <span className="px-2 py-2 text-center text-xs md:text-sm font-bold uppercase tracking-wide truncate"
-                    style={{ color: "#a78bfa" }}>
-                {labelFor(col[0])}
-              </span>
+            <div key={col[0].category} className="flex flex-col gap-2 min-h-0">
+              <div className="shrink-0 rounded-xl flex flex-col overflow-hidden"
+                   style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
+                {col[0].category_image_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={col[0].category_image_url} alt=""
+                       className="w-full aspect-[4/5] object-cover"
+                       style={{ backgroundColor: "#0d091a", maxHeight: "26vh" }} />
+                )}
+                <span className="px-2 py-2 text-center text-xs md:text-sm font-bold uppercase tracking-wide truncate"
+                      style={{ color: "#a78bfa" }}>
+                  {labelFor(col[0])}
+                </span>
+              </div>
+              <div className="flex-1 min-h-0 flex flex-col gap-2">
+                {col.map((cell, rowIdx) => (
+                  <button key={`${cell.category}-${cell.points}`}
+                    onClick={() => !cell.answered && onSelectCell(cell)}
+                    className="flex-1 min-h-0 rounded-xl text-center font-extrabold text-sm md:text-base lg:text-lg flex items-center justify-center transition-all"
+                    style={{
+                      backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
+                      border: `2px solid ${difficultyBorderColor(rowIdx, rows, cell.answered)}`,
+                      color: cell.answered ? "#2e205066" : "#d4860a",
+                      cursor: cell.answered ? "default" : "pointer",
+                    }}>
+                    {cell.answered ? "—" : cell.points.toLocaleString()}
+                  </button>
+                ))}
+              </div>
             </div>
           ))}
-          {/* Point cells: short pills, natural fixed height (not stretched) */}
-          {Array.from({ length: rows }).flatMap((_, rowIdx) =>
-            board.map((col) => {
-              const cell = col[rowIdx];
-              return (
-                <button key={`${cell.category}-${cell.points}`}
-                  onClick={() => !cell.answered && onSelectCell(cell)}
-                  className="py-2.5 md:py-3 rounded-xl text-center font-extrabold text-base md:text-lg transition-all"
-                  style={{
-                    backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
-                    border: `2px solid ${difficultyBorderColor(rowIdx, rows, cell.answered)}`,
-                    color: cell.answered ? "#2e205066" : "#d4860a",
-                    cursor: cell.answered ? "default" : "pointer",
-                  }}>
-                  {cell.answered ? "—" : cell.points.toLocaleString()}
-                </button>
-              );
-            })
-          )}
         </div>
       )}
     </div>
@@ -1175,7 +1181,7 @@ export default function ArenaGame() {
   const containerClass = isBoardStep
     ? "w-full max-w-none flex-1 flex flex-col min-h-0 mx-auto"
     : isCategoriesStep
-      ? "w-full max-w-7xl mx-auto"
+      ? "w-full max-w-none mx-auto"
       : "w-full max-w-3xl mx-auto";
   return (
     <div className={containerClass}>
