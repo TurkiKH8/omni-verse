@@ -9,7 +9,15 @@
 --   • RLS UPDATE policy so users can save progress on their own games
 -- ============================================================
 
--- 1) New columns on sessions
+-- 0) Make sure the columns this migration depends on actually exist.
+--    Older Omni-Verse databases were created before user_id/completed_at
+--    were part of the canonical schema, so we add them defensively.
+ALTER TABLE public.sessions
+  ADD COLUMN IF NOT EXISTS user_id      UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS created_at   TIMESTAMPTZ DEFAULT now();
+
+-- 1) New columns introduced by the history / active-game feature
 ALTER TABLE public.sessions
   ADD COLUMN IF NOT EXISTS status            TEXT DEFAULT 'active'
     CHECK (status IN ('active', 'completed', 'expired')),
