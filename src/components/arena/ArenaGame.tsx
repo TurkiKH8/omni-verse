@@ -226,7 +226,7 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} {t.arena.questionsEach}</span>}
         </p>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-3">
         {categories.map((cat) => {
           const isSelected = selected.includes(cat.name);
           const disabled   = !isSelected && selected.length >= 6;
@@ -235,16 +235,16 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           const displayName = lang === "ar" && cat.name_ar ? cat.name_ar : cat.name;
           return (
             <button key={cat.name} onClick={() => !disabled && handleClick(cat.name)}
-              className="rounded-2xl text-sm font-semibold text-left transition-all overflow-hidden flex flex-col"
+              className="rounded-xl text-xs md:text-sm font-semibold text-left transition-all overflow-hidden flex flex-col"
               style={{ backgroundColor: isSelected ? "#d4860a22" : "#1e1530", border: `2px solid ${isSelected ? "#d4860a" : "#2e2050"}`, color: isSelected ? "#d4860a" : disabled ? "#e8d5a033" : "#e8d5a0", cursor: disabled ? "not-allowed" : "pointer" }}>
               {hasImage && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={cat.image_url!} alt={displayName}
-                  className="w-full aspect-[4/5] object-cover"
+                  className="w-full aspect-square object-cover"
                   style={{ opacity: disabled ? 0.3 : 1, backgroundColor: "#0d091a" }} />
               )}
-              <span className="px-4 py-3 block text-center">
-                {isSelected && <span className="mr-2">✓</span>}{displayName}
+              <span className="px-2 py-2 md:px-3 md:py-2.5 block text-center truncate">
+                {isSelected && <span className="mr-1">✓</span>}{displayName}
               </span>
             </button>
           );
@@ -1043,13 +1043,17 @@ export default function ArenaGame() {
     );
   }
 
-  // The board step uses the full viewport (no max width, full height) so the
-  // grid + question buttons fill the screen without scrollbars. Other steps
-  // (categories, mode, session, results) stay centered and narrow.
-  const isBoardStep = step === "board";
+  // Board step: full viewport (no max width, full height) so the grid +
+  // question buttons fill the screen without scrollbars.
+  // Categories step: wide container so the category tiles use the whole page.
+  // Mode / session / results: narrow + centered for readability.
+  const isBoardStep      = step === "board";
+  const isCategoriesStep = step === "categories";
   const containerClass = isBoardStep
     ? "w-full max-w-none flex-1 flex flex-col min-h-0 mx-auto"
-    : "w-full max-w-3xl mx-auto";
+    : isCategoriesStep
+      ? "w-full max-w-7xl mx-auto"
+      : "w-full max-w-3xl mx-auto";
   return (
     <div className={containerClass}>
       {showBanner && <NoCoinsBanner coins={coins} onDismiss={() => setShowBanner(false)} />}
