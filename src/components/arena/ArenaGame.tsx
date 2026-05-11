@@ -226,7 +226,7 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} {t.arena.questionsEach}</span>}
         </p>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
         {categories.map((cat) => {
           const isSelected = selected.includes(cat.name);
           const disabled   = !isSelected && selected.length >= 6;
