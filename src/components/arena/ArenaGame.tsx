@@ -226,7 +226,7 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} {t.arena.questionsEach}</span>}
         </p>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 md:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
         {categories.map((cat) => {
           const isSelected = selected.includes(cat.name);
           const disabled   = !isSelected && selected.length >= 6;
@@ -235,7 +235,7 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           const displayName = lang === "ar" && cat.name_ar ? cat.name_ar : cat.name;
           return (
             <button key={cat.name} onClick={() => !disabled && handleClick(cat.name)}
-              className="rounded-xl text-xs md:text-sm font-semibold text-left transition-all overflow-hidden flex flex-col"
+              className="rounded-2xl text-sm md:text-base font-semibold text-left transition-all overflow-hidden flex flex-col"
               style={{ backgroundColor: isSelected ? "#d4860a22" : "#1e1530", border: `2px solid ${isSelected ? "#d4860a" : "#2e2050"}`, color: isSelected ? "#d4860a" : disabled ? "#e8d5a033" : "#e8d5a0", cursor: disabled ? "not-allowed" : "pointer" }}>
               {hasImage && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -243,8 +243,8 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
                   className="w-full aspect-square object-cover"
                   style={{ opacity: disabled ? 0.3 : 1, backgroundColor: "#0d091a" }} />
               )}
-              <span className="px-2 py-2 md:px-3 md:py-2.5 block text-center truncate">
-                {isSelected && <span className="mr-1">✓</span>}{displayName}
+              <span className="px-3 py-3 md:px-4 md:py-3 block text-center truncate">
+                {isSelected && <span className="mr-1.5">✓</span>}{displayName}
               </span>
             </button>
           );
