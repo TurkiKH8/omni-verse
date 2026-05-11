@@ -23,8 +23,22 @@ export default function Home() {
 
       <Navbar />
 
+      {/* Subtle, very faint logo watermark behind the hero on the home page
+          only. Sits behind everything (z-0 with low opacity) so the page
+          content reads exactly as before. */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0" aria-hidden>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt=""
+             className="w-[480px] md:w-[640px] max-w-[80vw] object-contain"
+             style={{ opacity: 0.04 }} />
+      </div>
+
       <main className="flex-1 flex flex-col items-center justify-center text-center px-6 py-24 relative z-10">
         <div className="max-w-3xl mx-auto flex flex-col items-center gap-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Omni-Verse"
+               className="h-28 md:h-36 w-auto object-contain"
+               style={{ filter: "drop-shadow(0 0 32px rgba(212, 134, 10, 0.35))" }} />
           <div className="px-4 py-1.5 rounded-full text-xs font-semibold tracking-widest uppercase"
             style={{ backgroundColor: "#1e1530", color: "#d4860a", border: "1px solid #d4860a33" }}>
             {t.home.badge}

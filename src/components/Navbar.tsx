@@ -132,11 +132,13 @@ export default function Navbar() {
       className="w-full px-6 py-4 flex items-center justify-between relative z-50"
       style={{ borderBottom: "1px solid #2e2050" }}
     >
-      {/* Logo + quick Sign Out */}
+      {/* Brand logo (home redirector) + quick Sign Out */}
       <div className="flex items-center gap-3">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-2xl font-bold tracking-wide" style={{ color: "#d4860a" }}>Omni</span>
-          <span className="text-2xl font-bold tracking-wide" style={{ color: "#e8d5a0" }}>-Verse</span>
+        <Link href="/" className="flex items-center" aria-label="Omni-Verse home">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Omni-Verse"
+               className="h-10 md:h-12 w-auto object-contain"
+               style={{ filter: "drop-shadow(0 0 12px rgba(212, 134, 10, 0.25))" }} />
         </Link>
         <button
           onClick={username ? handleSignOut : undefined}

@@ -124,9 +124,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <span className="block w-6 h-0.5" style={{ backgroundColor: "#e8d5a0" }} />
             <span className="block w-6 h-0.5" style={{ backgroundColor: "#e8d5a0" }} />
           </button>
-          <div className="flex items-center gap-1">
-            <span className="text-base font-extrabold" style={{ color: "#d4860a" }}>Omni</span>
-            <span className="text-base font-extrabold" style={{ color: "#e8d5a0" }}>-Verse Admin</span>
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Omni-Verse" className="h-7 w-auto object-contain" />
+            <span className="text-base font-extrabold" style={{ color: "#e8d5a0" }}>
+              <span style={{ color: "#d4860a" }}>Omni</span>-Verse Admin
+            </span>
           </div>
         </div>
 

@@ -69,9 +69,12 @@ export default function AdminSidebar({ onClose, isAdmin = false, developerLevel 
     >
       {/* Brand + close */}
       <div className="px-6 py-5 flex items-center justify-between" style={{ borderBottom: "1px solid #2e2050" }}>
-        <Link href="/admin/dashboard" onClick={onClose} className="flex items-center gap-1">
-          <span className="text-lg font-extrabold" style={{ color: "#d4860a" }}>Omni</span>
-          <span className="text-lg font-extrabold" style={{ color: "#e8d5a0" }}>-Verse</span>
+        <Link href="/admin/dashboard" onClick={onClose} className="flex items-center gap-2" aria-label="Omni-Verse admin home">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Omni-Verse" className="h-8 w-auto object-contain" />
+          <span className="text-sm font-extrabold tracking-wide" style={{ color: "#e8d5a0" }}>
+            <span style={{ color: "#d4860a" }}>Omni</span>-Verse
+          </span>
         </Link>
         {onClose && (
           <button
