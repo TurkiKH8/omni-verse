@@ -117,6 +117,32 @@ export default function TranslationsAdminPage() {
     return () => { cancelled = true; };
   }, [authReady, defaultsEn, defaultsAr]);
 
+  // ── Diff computation ────────────────────────────────────────────────────
+  // MUST be declared before any conditional early returns below so the hook
+  // ordering is stable across renders (React rules of hooks).
+  const diff = useMemo(() => {
+    const upserts: Array<{ key: string; lang: "en" | "ar"; value: string }> = [];
+    const deletes: Array<{ key: string; lang: "en" | "ar" }> = [];
+    for (const [key, pair] of Object.entries(draft)) {
+      const enDefault = defaultsEn[key] ?? "";
+      const enServer  = serverOverrides.en[key];
+      if (pair.en !== enDefault) {
+        if (pair.en !== enServer) upserts.push({ key, lang: "en", value: pair.en });
+      } else if (enServer !== undefined) {
+        deletes.push({ key, lang: "en" });
+      }
+      const arDefault = defaultsAr[key] ?? "";
+      const arServer  = serverOverrides.ar[key];
+      if (pair.ar !== arDefault) {
+        if (pair.ar !== arServer) upserts.push({ key, lang: "ar", value: pair.ar });
+      } else if (arServer !== undefined) {
+        deletes.push({ key, lang: "ar" });
+      }
+    }
+    return { upserts, deletes };
+  }, [draft, defaultsEn, defaultsAr, serverOverrides]);
+  const pendingCount = diff.upserts.length + diff.deletes.length;
+
   // ── Permission gate ─────────────────────────────────────────────────────
   if (!authReady) {
     return (
@@ -144,34 +170,6 @@ export default function TranslationsAdminPage() {
       </div>
     );
   }
-
-  // ── Diff computation ────────────────────────────────────────────────────
-  const computeDiff = (): { upserts: Array<{ key: string; lang: "en" | "ar"; value: string }>; deletes: Array<{ key: string; lang: "en" | "ar" }> } => {
-    const upserts: Array<{ key: string; lang: "en" | "ar"; value: string }> = [];
-    const deletes: Array<{ key: string; lang: "en" | "ar" }> = [];
-    for (const [key, pair] of Object.entries(draft)) {
-      // EN
-      const enDefault = defaultsEn[key] ?? "";
-      const enServer  = serverOverrides.en[key];
-      if (pair.en !== enDefault) {
-        if (pair.en !== enServer) upserts.push({ key, lang: "en", value: pair.en });
-      } else if (enServer !== undefined) {
-        deletes.push({ key, lang: "en" });
-      }
-      // AR
-      const arDefault = defaultsAr[key] ?? "";
-      const arServer  = serverOverrides.ar[key];
-      if (pair.ar !== arDefault) {
-        if (pair.ar !== arServer) upserts.push({ key, lang: "ar", value: pair.ar });
-      } else if (arServer !== undefined) {
-        deletes.push({ key, lang: "ar" });
-      }
-    }
-    return { upserts, deletes };
-  };
-
-  const diff = useMemo(computeDiff, [draft, defaultsEn, defaultsAr, serverOverrides]);
-  const pendingCount = diff.upserts.length + diff.deletes.length;
 
   // ── Save / Reset / Reset-row helpers ───────────────────────────────────
   const save = async () => {
