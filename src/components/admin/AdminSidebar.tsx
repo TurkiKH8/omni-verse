@@ -10,18 +10,22 @@ interface NavItem {
   href: string;
   adminOnly?: boolean;
   masterOnly?: boolean;
+  staffVisible?: boolean;
 }
 
+const STAFF_RANKS = ["Omni 1", "Omni 2", "Omni 3", "Master Omni"];
+
 const navItems: NavItem[] = [
-  { icon: "📊", label: "Dashboard",          href: "/admin/dashboard"   },
-  { icon: "🗂️", label: "Categories",         href: "/admin/categories", adminOnly: true },
-  { icon: "❓", label: "Questions",           href: "/admin/questions"   },
-  { icon: "👥", label: "Accounts",            href: "/admin/accounts",   adminOnly: true },
-  { icon: "🧑‍💼", label: "Customer Database",  href: "/admin/customers",  adminOnly: true },
-  { icon: "🏅", label: "Ranks",               href: "/admin/ranks",      adminOnly: true, masterOnly: true },
-  { icon: "⚙️", label: "Settings",            href: "/admin/settings",   adminOnly: true },
-  { icon: "👤", label: "Developer",           href: "/admin/developer",  adminOnly: true },
-  { icon: "📋", label: "Audit Log",           href: "/admin/audit-log",  adminOnly: true },
+  { icon: "📊", label: "Dashboard",          href: "/admin/dashboard"                                        },
+  { icon: "🗂️", label: "Categories",         href: "/admin/categories", adminOnly: true, staffVisible: true  },
+  { icon: "❓", label: "Questions",           href: "/admin/questions"                                        },
+  { icon: "👥", label: "Accounts",            href: "/admin/accounts",   adminOnly: true                      },
+  { icon: "🧑‍💼", label: "Customer Database",  href: "/admin/customers",  adminOnly: true                      },
+  { icon: "🏅", label: "Ranks",               href: "/admin/ranks",         adminOnly: true, masterOnly: true    },
+  { icon: "✍️", label: "Site Copy",           href: "/admin/translations",  adminOnly: true, masterOnly: true    },
+  { icon: "⚙️", label: "Settings",            href: "/admin/settings",      adminOnly: true                      },
+  { icon: "👤", label: "Developer",           href: "/admin/developer",  adminOnly: true                      },
+  { icon: "📋", label: "Audit Log",           href: "/admin/audit-log",  adminOnly: true                      },
 ];
 
 interface Props {
@@ -41,8 +45,10 @@ export default function AdminSidebar({ onClose, isAdmin = false, developerLevel 
   };
 
   const visible = navItems.filter((item) => {
-    if (item.masterOnly) return rank === "Master Omni";
+    if (rank === "Master Omni") return true;
+    if (item.masterOnly) return false;
     if (isAdmin) return true;
+    if (item.staffVisible) return rank !== null && STAFF_RANKS.includes(rank);
     return !item.adminOnly;
   });
 
