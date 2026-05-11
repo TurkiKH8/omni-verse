@@ -140,20 +140,69 @@ function buildBoardFromMock(categories: string[], questionsPerCat: number): Boar
   });
 }
 
-async function saveSession(name: string, mode: GameMode, categories: string[], teams: Team[], soloScore: number, questionsPerCat: number) {
+// ─── Session persistence (active games + history) ─────────────────────────────
+//
+// We INSERT a row at game start with status='active' so the user can refresh
+// or close the tab and return via /history. Each action then UPDATEs the row
+// with the latest board/teams/score. On game end we flip status='completed'.
+// 24-hour expiry is handled server-side (DEFAULT expires_at = now() + 24h)
+// and enforced client-side in HistoryView before display.
+
+async function createActiveSession(
+  name: string,
+  mode: GameMode,
+  categories: string[],
+  teams: Team[],
+  soloScore: number,
+  questionsPerCat: number,
+  board: BoardCell[][],
+  userId: string | null,
+): Promise<string | null> {
+  if (!isSupabaseConfigured || !userId) return null;
+  try {
+    const { data, error } = await supabase.from("sessions").insert({
+      name,
+      game_mode: mode,
+      category_names: categories,
+      total_questions: categories.length * questionsPerCat,
+      user_id: userId,
+      status: "active",
+      board_state: board,
+      teams_state: teams,
+      solo_score: soloScore,
+      current_step: "board",
+      questions_per_cat: questionsPerCat,
+      last_active_at: new Date().toISOString(),
+    }).select("id").single();
+    if (error) return null;
+    return data?.id ?? null;
+  } catch { return null; }
+}
+
+async function updateSession(
+  sessionId: string,
+  patch: {
+    board?: BoardCell[][];
+    teams?: Team[];
+    soloScore?: number;
+    currentStep?: Step;
+    status?: "active" | "completed" | "expired";
+  },
+): Promise<void> {
   if (!isSupabaseConfigured) return;
   try {
-    const { data: session } = await supabase.from("sessions").insert({
-      name, game_mode: mode, category_names: categories,
-      total_questions: categories.length * questionsPerCat,
-      completed_at: new Date().toISOString(),
-    }).select().single();
-    if (session && mode === "team") {
-      const sorted = [...teams].sort((a, b) => b.score - a.score);
-      await supabase.from("teams").insert(
-        sorted.map((t, i) => ({ session_id: session.id, name: t.name, score: t.score, rank: i + 1 }))
-      );
+    const updates: Record<string, unknown> = {
+      last_active_at: new Date().toISOString(),
+    };
+    if (patch.board       !== undefined) updates.board_state   = patch.board;
+    if (patch.teams       !== undefined) updates.teams_state   = patch.teams;
+    if (patch.soloScore   !== undefined) updates.solo_score    = patch.soloScore;
+    if (patch.currentStep !== undefined) updates.current_step  = patch.currentStep;
+    if (patch.status      !== undefined) {
+      updates.status = patch.status;
+      if (patch.status === "completed") updates.completed_at = new Date().toISOString();
     }
+    await supabase.from("sessions").update(updates).eq("id", sessionId);
   } catch { /* silently skip */ }
 }
 
@@ -793,6 +842,10 @@ export default function ArenaGame() {
   const [sessionSaved, setSessionSaved] = useState(false);
   const [reportCell, setReportCell] = useState<BoardCell | null>(null);
 
+  // DB id for the active game row — created on startGame, hydrated on resume.
+  // Used to UPDATE the row as the game progresses so refresh/close = recoverable.
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
   // Arena music
   const [arenaMusicUrl, setArenaMusicUrl] = useState("");
   const [tickUrl,       setTickUrl]       = useState("");
@@ -951,6 +1004,51 @@ export default function ArenaGame() {
     return () => { cancelled = true; };
   }, [router]);
 
+  // Resume an existing active game when the URL has ?resume=<sessionId>.
+  // Triggered after auth completes (ready + userId). On success we skip the
+  // category/mode/session steps entirely and land directly on the board.
+  // We do NOT rededuct coins — they were already spent when the session was
+  // first created. Expired sessions (>24h) are silently flipped + ignored.
+  useEffect(() => {
+    if (!ready || !userId || !isSupabaseConfigured) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const resumeId = params.get("resume");
+    if (!resumeId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("sessions")
+          .select("id, name, game_mode, category_names, board_state, teams_state, solo_score, status, expires_at, questions_per_cat")
+          .eq("id", resumeId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (cancelled || error || !data) return;
+        if (data.status !== "active") return;
+        if (new Date(data.expires_at as string) < new Date()) {
+          await supabase.from("sessions").update({ status: "expired" }).eq("id", resumeId);
+          return;
+        }
+        const restoredBoard = (data.board_state ?? []) as BoardCell[][];
+        const restoredTeams = (data.teams_state ?? []) as Team[];
+        setSessionId(data.id as string);
+        setSessionName((data.name as string) ?? "");
+        setGameMode((data.game_mode as GameMode) ?? "team");
+        setSelected((data.category_names as string[]) ?? []);
+        setBoard(restoredBoard);
+        setTeams(restoredTeams);
+        setTeamCount(Math.max(2, restoredTeams.length || 2));
+        setTeamNames(restoredTeams.map((t) => t.name).concat(["Team 5", "Team 6"]).slice(0, 6));
+        setSoloScore((data.solo_score as number) ?? 0);
+        setSessionSaved(false);
+        setStep("board");
+      } catch { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [ready, userId]);
+
   const toggleCategory = useCallback((cat: string) => {
     setSelected((p) => p.includes(cat) ? p.filter((c) => c !== cat) : [...p, cat]);
   }, []);
@@ -982,23 +1080,40 @@ export default function ArenaGame() {
     const questionsPerCat = QUESTIONS_PER_CATEGORY[selectedCategories.length] ?? 6;
     const dbBoard   = await fetchBoardFromSupabase(selectedCategories, questionsPerCat);
     const builtBoard = dbBoard ?? buildBoardFromMock(selectedCategories, questionsPerCat);
+    const initialTeams: Team[] = Array.from({ length: teamCount }, (_, i) => ({ id: i, name: teamNames[i] || `Team ${i + 1}`, score: 0 }));
+
     setBoard(builtBoard);
-    setTeams(Array.from({ length: teamCount }, (_, i) => ({ id: i, name: teamNames[i] || `Team ${i + 1}`, score: 0 })));
+    setTeams(initialTeams);
     setSoloScore(0);
     setSessionSaved(false);
+
+    // Persist the new active game so refresh/close → can be resumed via /history.
+    const newId = await createActiveSession(
+      sessionName, gameMode, selectedCategories, initialTeams,
+      0, questionsPerCat, builtBoard, userId,
+    );
+    setSessionId(newId);
+
     setLoadingGame(false);
     setStep("board");
   };
 
-  const handleEndGame = useCallback(async (finalTeams: Team[], finalSoloScore: number) => {
+  const handleEndGame = useCallback(async (finalTeams: Team[], finalSoloScore: number, finalBoard?: BoardCell[][]) => {
     if (!sessionSaved) {
       setSessionSaved(true);
-      const questionsPerCat = QUESTIONS_PER_CATEGORY[selectedCategories.length] ?? 6;
-      await saveSession(sessionName, gameMode, selectedCategories, finalTeams, finalSoloScore, questionsPerCat);
+      if (sessionId) {
+        await updateSession(sessionId, {
+          board:       finalBoard ?? board,
+          teams:       finalTeams,
+          soloScore:   finalSoloScore,
+          currentStep: "results",
+          status:      "completed",
+        });
+      }
     }
     arenaAudioRef.current?.pause();
     setStep("results");
-  }, [sessionSaved, sessionName, gameMode, selectedCategories]);
+  }, [sessionSaved, sessionId, board]);
 
   const handleSelectCell = (cell: BoardCell) => { setCurrentCell(cell); setStep("question"); };
   const handleReveal = () => setStep("answer");
@@ -1012,7 +1127,14 @@ export default function ArenaGame() {
     const newBoard = board.map((col) => col.map((c) => c.category === currentCell.category && c.points === currentCell.points ? { ...c, answered: true } : c));
     setBoard(newBoard);
     setCurrentCell(null);
-    if (newBoard.flat().every((c) => c.answered)) { handleEndGame(newTeams, newSolo); } else { setStep("board"); }
+    const done = newBoard.flat().every((c) => c.answered);
+    if (done) {
+      handleEndGame(newTeams, newSolo, newBoard);
+    } else {
+      setStep("board");
+      // Persist after-state so a refresh resumes here, not on a stale snapshot.
+      if (sessionId) updateSession(sessionId, { board: newBoard, teams: newTeams, soloScore: newSolo, currentStep: "board" });
+    }
   };
 
   const handleNoOne = () => {
@@ -1020,12 +1142,19 @@ export default function ArenaGame() {
     const newBoard = board.map((col) => col.map((c) => c.category === currentCell.category && c.points === currentCell.points ? { ...c, answered: true } : c));
     setBoard(newBoard);
     setCurrentCell(null);
-    if (newBoard.flat().every((c) => c.answered)) { handleEndGame(teams, soloScore); } else { setStep("board"); }
+    const done = newBoard.flat().every((c) => c.answered);
+    if (done) {
+      handleEndGame(teams, soloScore, newBoard);
+    } else {
+      setStep("board");
+      if (sessionId) updateSession(sessionId, { board: newBoard, currentStep: "board" });
+    }
   };
 
   const handlePlayAgain = () => {
     setStep("categories"); setSelected([]); setSessionName("");
     setBoard([]); setCurrentCell(null); setSoloScore(0); setSessionSaved(false);
+    setSessionId(null);
   };
 
   if (!ready) {
