@@ -12,7 +12,7 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Omni-Verse — Competitive Trivia",
+  title: "Omni-Verse — The Entertainment Verse",
   description: "A bilingual competitive trivia gaming platform. Challenge your knowledge across categories.",
   // The actual favicon comes from src/app/icon.png via the App Router
   // file convention. apple-touch-icon is set explicitly for iOS bookmarks.
