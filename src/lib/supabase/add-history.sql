@@ -20,7 +20,7 @@ ALTER TABLE public.sessions
 -- 1) New columns introduced by the history / active-game feature
 ALTER TABLE public.sessions
   ADD COLUMN IF NOT EXISTS status            TEXT DEFAULT 'active'
-    CHECK (status IN ('active', 'completed', 'expired')),
+    CHECK (status IN ('active', 'completed', 'expired', 'cancelled')),
   ADD COLUMN IF NOT EXISTS board_state       JSONB,
   ADD COLUMN IF NOT EXISTS teams_state       JSONB,
   ADD COLUMN IF NOT EXISTS solo_score        INTEGER DEFAULT 0,

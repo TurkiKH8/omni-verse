@@ -188,6 +188,7 @@ export const TRANSLATIONS = {
       cancelYes:    "Yes, Cancel Game",
       cancelNo:     "Keep Playing",
       cancelling:   "Cancelling…",
+      cancelled:    "Cancelled",
     },
     forgot: {
       title:    "Forgot Password",
@@ -412,6 +413,7 @@ export const TRANSLATIONS = {
       cancelYes:    "نعم، ألغِ اللعبة",
       cancelNo:     "متابعة اللعب",
       cancelling:   "جاري الإلغاء…",
+      cancelled:    "ملغاة",
     },
     forgot: {
       title:    "نسيت كلمة المرور",

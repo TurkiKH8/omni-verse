@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useLanguage } from "@/components/LanguageProvider";
 
-type Status = "active" | "completed" | "expired";
+type Status = "active" | "completed" | "expired" | "cancelled";
 
 interface SessionRow {
   id: string;
@@ -108,14 +108,21 @@ export default function HistoryView() {
     router.push(`/arena?resume=${id}`);
   };
 
-  // Cancelling an active game deletes the row outright — coins already spent
-  // are NOT refunded (per product spec). The user is warned by a modal first.
+  // Cancelling an active game flips its status to 'cancelled' so it still
+  // appears in History (under Past Games) with a clear Cancelled badge.
+  // Coins already spent are NOT refunded (per product spec). The user is
+  // warned by a modal first.
   const confirmCancel = async () => {
     if (!cancelTarget) return;
     setCancelling(true);
     try {
-      await supabase.from("sessions").delete().eq("id", cancelTarget.id);
-      setSessions((prev) => prev.filter((s) => s.id !== cancelTarget.id));
+      await supabase
+        .from("sessions")
+        .update({ status: "cancelled", completed_at: new Date().toISOString() })
+        .eq("id", cancelTarget.id);
+      setSessions((prev) => prev.map((s) =>
+        s.id === cancelTarget.id ? { ...s, status: "cancelled" as Status, completed_at: new Date().toISOString() } : s
+      ));
       setCancelTarget(null);
     } finally {
       setCancelling(false);
@@ -224,19 +231,40 @@ export default function HistoryView() {
             {past.map((s) => {
               const sorted = [...(s.teams_state ?? [])].sort((a, b) => b.score - a.score);
               const winner = sorted[0];
-              const isExpired = s.status === "expired";
+              const isExpired   = s.status === "expired";
+              const isCancelled = s.status === "cancelled";
+              const isCompleted = s.status === "completed";
+              // Cancelled games get a stronger red accent so the user can
+              // spot them at a glance among the past games.
+              const borderColor = isCancelled ? "#dc262688" : "#2e2050";
+              const bgColor     = isCancelled ? "#dc262611" : "#1e1530";
               return (
-                <div key={s.id} className="rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-3"
-                     style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", opacity: isExpired ? 0.55 : 1 }}>
+                <div key={s.id} className="rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-center gap-3 relative overflow-hidden"
+                     style={{ backgroundColor: bgColor, border: `1px solid ${borderColor}`, opacity: isExpired ? 0.55 : 1 }}>
+                  {/* Red left-edge accent on cancelled rows for quick scanning */}
+                  {isCancelled && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1" style={{ backgroundColor: "#dc2626" }} />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-bold text-base md:text-lg truncate" style={{ color: "#e8d5a0" }}>{s.name}</h3>
+                      <h3 className="font-bold text-base md:text-lg truncate"
+                          style={{ color: isCancelled ? "#e8d5a0" : "#e8d5a0", textDecoration: isCancelled ? "line-through" : "none", textDecorationColor: "#dc262688" }}>
+                        {s.name}
+                      </h3>
+                      {isCancelled && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
+                              style={{ backgroundColor: "#dc262633", color: "#fca5a5", border: "1px solid #dc262666" }}>
+                          {t.history.cancelled}
+                        </span>
+                      )}
                       {isExpired && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
                               style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
                           {t.history.expired}
                         </span>
                       )}
+                      {/* keep markup balanced — no extra badge needed for completed */}
+                      {isCompleted && null}
                     </div>
                     <p className="text-xs mt-1" style={{ color: "#e8d5a0", opacity: 0.55 }}>
                       {t.history.played}: <span style={{ color: "#e8d5a0", opacity: 0.8 }}>{formatDate(s.completed_at ?? s.last_active_at, lang)}</span>
@@ -247,7 +275,11 @@ export default function HistoryView() {
                     </p>
                   </div>
                   <div className="text-xs shrink-0 text-right">
-                    {s.game_mode === "solo" ? (
+                    {isCancelled ? (
+                      // Cancelled games show no score / winner — the row is
+                      // here for record-keeping only.
+                      <p className="text-xs italic" style={{ color: "#fca5a5", opacity: 0.85 }}>{t.history.cancelled}</p>
+                    ) : s.game_mode === "solo" ? (
                       <>
                         <p style={{ color: "#e8d5a0", opacity: 0.5 }}>{t.history.finalScore}</p>
                         <p className="font-extrabold text-lg" style={{ color: "#d4860a" }}>{(s.solo_score ?? 0).toLocaleString()}</p>
