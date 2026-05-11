@@ -58,44 +58,37 @@ type DBQuestion = {
   question_ar?: string | null;
   answer_ar?: string | null;
   image_url?: string | null;
+  is_hidden?: boolean | null;
 };
 
-type DBCategoryRow = { id: string; name_en: string; name_ar?: string | null; image_url?: string | null };
+type DBCategoryRow = {
+  id: string;
+  name_en: string;
+  name_ar?: string | null;
+  image_url?: string | null;
+  is_hidden?: boolean | null;
+};
 
 async function fetchBoardFromSupabase(categories: string[], questionsPerCat: number): Promise<BoardCell[][] | null> {
   if (!isSupabaseConfigured) return null;
   try {
-    // Categories: try full shape (name_ar, image_url) first; fall back if columns missing
-    let cats: DBCategoryRow[] | null = null;
-    const catFull = await supabase
-      .from("categories").select("id, name_en, name_ar, image_url").in("name_en", categories);
-    if (catFull.data && !catFull.error) {
-      cats = catFull.data as DBCategoryRow[];
-    } else {
-      const catBasic = await supabase
-        .from("categories").select("id, name_en, name_ar").in("name_en", categories);
-      cats = (catBasic.data ?? null) as DBCategoryRow[] | null;
-    }
-    if (!cats || cats.length === 0) return null;
+    // SELECT * always works regardless of which optional columns exist
+    // (image_url, is_hidden, name_ar may or may not be present yet). We
+    // then filter is_hidden client-side so a missing column == no rows
+    // hidden, gracefully degrading.
+    const catRes = await supabase
+      .from("categories").select("*").in("name_en", categories);
+    const catsRaw = (catRes.data ?? []) as DBCategoryRow[];
+    const cats = catsRaw.filter((c) => !c.is_hidden);
+    if (cats.length === 0) return null;
 
-    // Questions: try with image_url, fall back without
-    let qs: DBQuestion[] | null = null;
-    const tryFull = await supabase
-      .from("questions")
-      .select("category_id, points, question_en, answer_en, question_ar, answer_ar, image_url")
+    const qRes = await supabase
+      .from("questions").select("*")
       .in("category_id", cats.map((c) => c.id))
       .order("points", { ascending: true });
-    if (tryFull.data && !tryFull.error) {
-      qs = tryFull.data as DBQuestion[];
-    } else {
-      const tryBasic = await supabase
-        .from("questions")
-        .select("category_id, points, question_en, answer_en, question_ar, answer_ar")
-        .in("category_id", cats.map((c) => c.id))
-        .order("points", { ascending: true });
-      qs = (tryBasic.data ?? null) as DBQuestion[] | null;
-    }
-    if (!qs || qs.length === 0) return null;
+    const qsRaw = (qRes.data ?? []) as DBQuestion[];
+    const qs = qsRaw.filter((q) => !q.is_hidden);
+    if (qs.length === 0) return null;
 
     const pointValues = getPointValues(questionsPerCat);
     const standard6  = questionsPerCat === 6;
@@ -363,6 +356,19 @@ function SessionSetup({ sessionName, onChange, onBack, onStart, loading, error }
 
 // ─── Game Board ───────────────────────────────────────────────────────────────
 
+// Pick a sensible cols × rows layout for a single-category board so 24
+// (or 12 / 8 / 6) cells fill the screen without leaving giant gaps.
+function singleCatLayout(count: number): { cols: number; rows: number } {
+  if (count === 24) return { cols: 6, rows: 4 };
+  if (count === 12) return { cols: 4, rows: 3 };
+  if (count === 8)  return { cols: 4, rows: 2 };
+  if (count === 6)  return { cols: 3, rows: 2 };
+  if (count === 5)  return { cols: 5, rows: 1 };
+  if (count <= 4)   return { cols: count, rows: 1 };
+  const cols = Math.ceil(Math.sqrt(count));
+  return { cols, rows: Math.ceil(count / cols) };
+}
+
 function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGame }:
   { board: BoardCell[][]; teams: Team[]; gameMode: GameMode; sessionName: string; onSelectCell: (c: BoardCell) => void; onEndGame: () => void }) {
   const { t, lang } = useLanguage();
@@ -371,22 +377,28 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
   const rows     = board[0]?.length ?? 0;
   // Pick the right category label per active language
   const labelFor = (cell: BoardCell) => (lang === "ar" && cell.category_ar ? cell.category_ar : cell.category);
+  const isSingleCat = board.length === 1;
+  const layout = isSingleCat ? singleCatLayout(board[0].length) : { cols: board.length, rows };
+
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-extrabold" style={{ color: "#e8d5a0" }}>{sessionName}</h2>
+    <div className="flex flex-col gap-2 md:gap-3 h-full min-h-0">
+      {/* Compact header: session info + end-game button */}
+      <div className="flex items-center justify-between shrink-0">
+        <div className="min-w-0">
+          <h2 className="text-lg md:text-xl font-extrabold truncate" style={{ color: "#e8d5a0" }}>{sessionName}</h2>
           <p className="text-xs mt-0.5" style={{ color: "#e8d5a0", opacity: 0.5 }}>{answered}/{total} {t.arena.answered}</p>
         </div>
-        <button onClick={onEndGame} className="px-4 py-2 rounded-full text-xs font-bold"
+        <button onClick={onEndGame} className="shrink-0 px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs font-bold"
           style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed", color: "#a78bfa" }}>
           {t.arena.endGame}
         </button>
       </div>
+
+      {/* Team scores (compact) */}
       {gameMode === "team" && teams.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap shrink-0">
           {[...teams].sort((a, b) => b.score - a.score).map((team) => (
-            <div key={team.id} className="flex items-center gap-2 px-3 py-1.5 rounded-full"
+            <div key={team.id} className="flex items-center gap-2 px-3 py-1 rounded-full"
               style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
               <span className="text-xs font-medium" style={{ color: "#e8d5a0" }}>{team.name}</span>
               <span className="text-xs font-bold" style={{ color: "#d4860a" }}>{team.score.toLocaleString()}</span>
@@ -394,34 +406,32 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           ))}
         </div>
       )}
-      {/* Single-category boards (24 questions) get a wide responsive
-          auto-fit grid so we don't end up with one tall column on desktop.
-          Multi-category boards keep the Jeopardy-style column-per-category
-          layout — but with wider cell minimums so the grid fills the
-          available horizontal space on web. Mobile stays compact via
-          minmax(72px,1fr) and horizontal scroll if needed. */}
-      {board.length === 1 ? (
-        <div className="overflow-auto max-h-[75vh]">
-          <div className="flex justify-center mb-3">
-            <div className="rounded-xl overflow-hidden flex flex-col"
-              style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", width: 160 }}>
-              {board[0][0].category_image_url && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={board[0][0].category_image_url} alt=""
-                  className="w-full aspect-[4/5] object-cover"
-                  style={{ backgroundColor: "#0d091a" }} />
-              )}
-              <div className="px-3 py-2 text-center text-sm font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>
-                {labelFor(board[0][0])}
-              </div>
-            </div>
+
+      {/* Board fills remaining viewport — no scrollbars. Cells stretch to fit. */}
+      {isSingleCat ? (
+        <div className="flex-1 min-h-0 flex flex-col gap-2">
+          <div className="shrink-0 flex items-center justify-center gap-2 px-3 py-2 rounded-xl"
+               style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
+            {board[0][0].category_image_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={board[0][0].category_image_url} alt=""
+                   className="h-8 w-8 md:h-10 md:w-10 rounded-md object-cover shrink-0"
+                   style={{ backgroundColor: "#0d091a" }} />
+            )}
+            <span className="text-sm md:text-base font-bold uppercase tracking-wide truncate"
+                  style={{ color: "#a78bfa" }}>
+              {labelFor(board[0][0])}
+            </span>
           </div>
-          <div className="grid gap-2"
-            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))" }}>
+          <div className="flex-1 min-h-0 grid gap-2"
+               style={{
+                 gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
+                 gridTemplateRows:    `repeat(${layout.rows}, minmax(0, 1fr))`,
+               }}>
             {board[0].map((cell, idx) => (
               <button key={`${cell.category}-${cell.points}`}
                 onClick={() => !cell.answered && onSelectCell(cell)}
-                className="py-5 md:py-7 rounded-xl text-center font-extrabold text-base md:text-lg transition-all"
+                className="rounded-xl text-center font-extrabold text-lg md:text-3xl transition-all flex items-center justify-center"
                 style={{
                   backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
                   border: `2px solid ${difficultyBorderColor(idx, rows, cell.answered)}`,
@@ -434,47 +444,47 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           </div>
         </div>
       ) : (
-        <div className="overflow-auto max-h-[75vh]">
-          <div className="min-w-max">
-            <div className="grid gap-2"
-              style={{ gridTemplateColumns: `repeat(${board.length}, minmax(72px, 1fr))` }}>
-              {board.map((col) => (
-                <div key={col[0].category} className="rounded-xl overflow-hidden flex flex-col"
-                  style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
-                  {col[0].category_image_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={col[0].category_image_url} alt=""
-                      className="w-full aspect-[4/5] object-cover"
-                      style={{ backgroundColor: "#0d091a" }} />
-                  )}
-                  <div className="px-2 py-2 md:px-3 md:py-3 text-center text-xs md:text-sm font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>
-                    {labelFor(col[0])}
-                  </div>
-                </div>
-              ))}
+        <div className="flex-1 min-h-0 grid gap-2"
+             style={{
+               gridTemplateColumns: `repeat(${board.length}, minmax(0, 1fr))`,
+               gridTemplateRows:    `auto repeat(${rows}, minmax(0, 1fr))`,
+             }}>
+          {/* Column headers (row 1): tiny thumbnail + name, compact */}
+          {board.map((col) => (
+            <div key={`hdr-${col[0].category}`}
+                 className="rounded-xl flex items-center gap-1.5 md:gap-2 px-1.5 py-1 md:px-2 md:py-1.5 overflow-hidden"
+                 style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
+              {col[0].category_image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={col[0].category_image_url} alt=""
+                     className="h-7 w-7 md:h-9 md:w-9 rounded-md object-cover shrink-0"
+                     style={{ backgroundColor: "#0d091a" }} />
+              )}
+              <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide truncate flex-1"
+                    style={{ color: "#a78bfa" }}>
+                {labelFor(col[0])}
+              </span>
             </div>
-            {Array.from({ length: rows }, (_, rowIdx) => (
-              <div key={rowIdx} className="grid gap-2 mt-2"
-                style={{ gridTemplateColumns: `repeat(${board.length}, minmax(72px, 1fr))` }}>
-                {board.map((col) => {
-                  const cell = col[rowIdx];
-                  return (
-                    <button key={`${cell.category}-${cell.points}`}
-                      onClick={() => !cell.answered && onSelectCell(cell)}
-                      className="py-4 md:py-7 rounded-xl text-center font-extrabold text-sm md:text-lg transition-all"
-                      style={{
-                        backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
-                        border: `2px solid ${difficultyBorderColor(rowIdx, rows, cell.answered)}`,
-                        color: cell.answered ? "#2e205066" : "#d4860a",
-                        cursor: cell.answered ? "default" : "pointer",
-                      }}>
-                      {cell.answered ? "—" : cell.points.toLocaleString()}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
+          ))}
+          {/* Cells flowed row-major so CSS grid auto-flow places them correctly */}
+          {Array.from({ length: rows }).flatMap((_, rowIdx) =>
+            board.map((col) => {
+              const cell = col[rowIdx];
+              return (
+                <button key={`${cell.category}-${cell.points}`}
+                  onClick={() => !cell.answered && onSelectCell(cell)}
+                  className="rounded-xl text-center font-extrabold text-sm md:text-2xl transition-all flex items-center justify-center"
+                  style={{
+                    backgroundColor: cell.answered ? "#1e153088" : "#1e1530",
+                    border: `2px solid ${difficultyBorderColor(rowIdx, rows, cell.answered)}`,
+                    color: cell.answered ? "#2e205066" : "#d4860a",
+                    cursor: cell.answered ? "default" : "pointer",
+                  }}>
+                  {cell.answered ? "—" : cell.points.toLocaleString()}
+                </button>
+              );
+            })
+          )}
         </div>
       )}
     </div>
@@ -1033,13 +1043,15 @@ export default function ArenaGame() {
     );
   }
 
-  // The board step gets a wider container on desktop so the grid fills the
-  // viewport. Other steps (categories, mode, session, results) stay centered
-  // and narrow for readability. Mobile is unaffected — max-w-3xl is wider
-  // than mobile viewports anyway.
-  const containerMaxW = step === "board" ? "max-w-6xl" : "max-w-3xl";
+  // The board step uses the full viewport (no max width, full height) so the
+  // grid + question buttons fill the screen without scrollbars. Other steps
+  // (categories, mode, session, results) stay centered and narrow.
+  const isBoardStep = step === "board";
+  const containerClass = isBoardStep
+    ? "w-full max-w-none flex-1 flex flex-col min-h-0 mx-auto"
+    : "w-full max-w-3xl mx-auto";
   return (
-    <div className={`w-full ${containerMaxW} mx-auto`}>
+    <div className={containerClass}>
       {showBanner && <NoCoinsBanner coins={coins} onDismiss={() => setShowBanner(false)} />}
       {reportCell && <ReportModal cell={reportCell} onClose={() => setReportCell(null)} />}
 

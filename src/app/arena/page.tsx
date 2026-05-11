@@ -10,7 +10,7 @@ export default function ArenaPage() {
 
       <Navbar />
 
-      <main className="flex-1 px-4 py-8 md:px-6 md:py-12 relative z-10">
+      <main className="flex-1 flex flex-col px-4 py-4 md:px-6 md:py-6 relative z-10 min-h-0">
         <ArenaGame />
       </main>
 
