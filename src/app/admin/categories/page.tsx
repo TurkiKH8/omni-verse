@@ -4,20 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Category } from "@/lib/supabase/types";
 
-const FALLBACK: Category[] = [
-  { id: "1", name_en: "Science",      name_ar: "العلوم",         active: true,  question_count: 6, created_at: "", updated_at: "" },
-  { id: "2", name_en: "History",      name_ar: "التاريخ",        active: true,  question_count: 6, created_at: "", updated_at: "" },
-  { id: "3", name_en: "Geography",    name_ar: "الجغرافيا",      active: true,  question_count: 6, created_at: "", updated_at: "" },
-  { id: "4", name_en: "Sports",       name_ar: "الرياضة",        active: true,  question_count: 6, created_at: "", updated_at: "" },
-  { id: "5", name_en: "Movies & TV",  name_ar: "أفلام وتلفزيون", active: true,  question_count: 6, created_at: "", updated_at: "" },
-  { id: "6", name_en: "Music",        name_ar: "الموسيقى",       active: true,  question_count: 6, created_at: "", updated_at: "" },
-  { id: "7", name_en: "Technology",   name_ar: "التقنية",        active: true,  question_count: 6, created_at: "", updated_at: "" },
-  { id: "8", name_en: "Literature",   name_ar: "الأدب",          active: false, question_count: 6, created_at: "", updated_at: "" },
-  { id: "9", name_en: "Art",          name_ar: "الفن",           active: false, question_count: 6, created_at: "", updated_at: "" },
-  { id: "10", name_en: "Food & Drink",name_ar: "طعام وشراب",     active: true,  question_count: 6, created_at: "", updated_at: "" },
-  { id: "11", name_en: "Nature",      name_ar: "الطبيعة",        active: false, question_count: 6, created_at: "", updated_at: "" },
-  { id: "12", name_en: "Politics",    name_ar: "السياسة",        active: false, question_count: 6, created_at: "", updated_at: "" },
-];
+// No hardcoded categories — the list is whatever Supabase returns.
+// (Demo mode without Supabase simply shows an empty list now.)
+const FALLBACK: Category[] = [];
 
 async function logAction(action: string, target: string, type: "create" | "update" | "delete") {
   if (!isSupabaseConfigured) return;
@@ -105,7 +94,9 @@ export default function CategoriesPage() {
       .from("categories")
       .select("*")
       .order("created_at", { ascending: true });
-    if (data && data.length > 0) setCategories(data as Category[]);
+    // An empty result must replace the list (not keep stale state) — the DB
+    // is the source of truth, including when it has zero categories.
+    if (data) setCategories(data as Category[]);
     setLoading(false);
   }, []);
 

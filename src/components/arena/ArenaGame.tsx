@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
-import { ALL_CATEGORIES, MOCK_QUESTIONS } from "@/lib/mockQuestions";
+import { MOCK_QUESTIONS } from "@/lib/mockQuestions";
 import { useLanguage } from "@/components/LanguageProvider";
 
 type Step = "categories" | "gameMode" | "session" | "board" | "question" | "answer" | "results";
@@ -357,6 +357,12 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} {t.arena.questionsEach}</span>}
         </p>
       </div>
+      {categories.length === 0 && (
+        <div className="rounded-2xl px-6 py-12 text-center" style={{ backgroundColor: "#1e1530", border: "1px dashed #2e2050" }}>
+          <p className="text-2xl mb-2">🗂️</p>
+          <p className="text-sm" style={{ color: "#e8d5a0", opacity: 0.6 }}>No categories available yet — check back soon.</p>
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5 md:gap-7 lg:gap-10">
         {categories.map((cat) => {
           const isSelected = selected.includes(cat.name);
@@ -930,9 +936,9 @@ export default function ArenaGame() {
   const [userId,      setUserId]      = useState<string | null>(null);
   const [showBanner,  setShowBanner]  = useState(false);
   const [gameError,   setGameError]   = useState<string | null>(null);
-  const [liveCategories, setLiveCategories] = useState<CategoryOption[]>(
-    ALL_CATEGORIES.map((name) => ({ name }))
-  );
+  // Starts empty — categories come from Supabase. No hardcoded fallback list:
+  // an empty DB shows an empty picker, which is the truthful state.
+  const [liveCategories, setLiveCategories] = useState<CategoryOption[]>([]);
 
   const [step,     setStep]     = useState<Step>("categories");
   const [selectedCategories, setSelected] = useState<string[]>([]);
@@ -1091,7 +1097,9 @@ export default function ArenaGame() {
             .abortSignal(ctrl.signal);
           clearTimeout(t);
           if (full.data && !full.error) {
-            return full.data.length > 0 ? mapRich(full.data as Array<Record<string, unknown>>) : null;
+            // Return whatever the DB has — including [] when it's empty.
+            // No fallback to a hardcoded list.
+            return mapRich(full.data as Array<Record<string, unknown>>);
           }
         } catch { /* fall through */ }
         try {
