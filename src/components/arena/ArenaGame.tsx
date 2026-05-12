@@ -23,7 +23,18 @@ interface BoardCell {
   answered: boolean;
   image_url?: string | null;   // Per-question image
 }
-interface CategoryOption { name: string; name_ar?: string | null; image_url?: string | null; }
+interface CategoryOption {
+  name: string;
+  name_ar?: string | null;
+  image_url?: string | null;
+  // Powers the "?" preview shown on the category-picker tiles.
+  description_en?: string | null;
+  description_ar?: string | null;
+  sample_question_en?: string | null;
+  sample_answer_en?: string | null;
+  sample_question_ar?: string | null;
+  sample_answer_ar?: string | null;
+}
 
 const QUESTIONS_PER_CATEGORY: Record<number, number> = {
   1: 24, 2: 12, 3: 8, 4: 6, 5: 5, 6: 4,
@@ -252,12 +263,83 @@ function StepIndicator({ step }: { step: Step }) {
   );
 }
 
+// ─── Category Preview Modal ───────────────────────────────────────────────────
+// Opened from the "?" badge on a category tile. Shows the category description
+// plus a sample question styled like a game card, with a reveal-answer step —
+// a quick taste of what playing this category feels like.
+
+function CategoryPreviewModal({ cat, onClose }: { cat: CategoryOption; onClose: () => void }) {
+  const { t, lang } = useLanguage();
+  const [revealed, setRevealed] = useState(false);
+  const isAr = lang === "ar";
+  const name        = isAr && cat.name_ar ? cat.name_ar : cat.name;
+  const description = (isAr ? cat.description_ar : cat.description_en) || (cat.description_en || cat.description_ar || "");
+  const question    = (isAr ? cat.sample_question_ar : cat.sample_question_en) || (cat.sample_question_en || cat.sample_question_ar || "");
+  const answer      = (isAr ? cat.sample_answer_ar : cat.sample_answer_en) || (cat.sample_answer_en || cat.sample_answer_ar || "");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6" style={{ backgroundColor: "#000000aa" }}
+         onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl p-6 md:p-7 flex flex-col gap-5 max-h-[90vh] overflow-y-auto"
+           style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}
+           onClick={(e) => e.stopPropagation()}>
+        {/* Header: cover thumbnail + name */}
+        <div className="flex items-center gap-3">
+          {cat.image_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={cat.image_url} alt="" className="h-12 w-12 rounded-lg object-cover shrink-0" style={{ backgroundColor: "#0d091a" }} />
+          )}
+          <div className="min-w-0 flex-1">
+            <h3 className="text-lg font-extrabold truncate" style={{ color: "#e8d5a0" }}>{name}</h3>
+          </div>
+          <button onClick={onClose} className="text-lg leading-none shrink-0" style={{ color: "#e8d5a0", opacity: 0.5 }} aria-label={t.arena.previewClose}>✕</button>
+        </div>
+
+        {/* Description */}
+        {description && (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>{t.arena.previewAbout}</p>
+            <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.85, direction: isAr ? "rtl" : "ltr" }}>{description}</p>
+          </div>
+        )}
+
+        {/* Sample question card — styled like a game-board card */}
+        <div className="rounded-2xl p-5 flex flex-col gap-4" style={{ backgroundColor: "#120d1f", border: "1px solid #7c3aed44" }}>
+          <span className="self-start px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide"
+                style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
+            {t.arena.previewSampleQ}
+          </span>
+          <p className="text-base md:text-lg font-bold leading-snug" style={{ color: "#e8d5a0", direction: isAr ? "rtl" : "ltr" }}>{question}</p>
+          {revealed ? (
+            <div className="pt-3" style={{ borderTop: "1px solid #2e2050" }}>
+              <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: "#d4860a" }}>{t.arena.previewAnswer}</p>
+              <p className="text-lg md:text-xl font-extrabold" style={{ color: "#e8d5a0", direction: isAr ? "rtl" : "ltr" }}>{answer}</p>
+            </div>
+          ) : (
+            <button onClick={() => setRevealed(true)}
+              className="self-start px-6 py-2.5 rounded-full font-bold text-sm hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
+              {t.arena.previewReveal}
+            </button>
+          )}
+        </div>
+
+        <button onClick={onClose} className="w-full py-2.5 rounded-full text-sm font-medium"
+          style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>
+          {t.arena.previewClose}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Category Select ──────────────────────────────────────────────────────────
 
 function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner, onNext }:
   { selected: string[]; coins: number; categories: CategoryOption[]; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
   const { t, lang } = useLanguage();
   const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
+  const [previewCat, setPreviewCat] = useState<CategoryOption | null>(null);
 
   const handleClick = (catName: string) => {
     if (selected.includes(catName)) { onToggle(catName); return; }
@@ -280,12 +362,28 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           const isSelected = selected.includes(cat.name);
           const disabled   = !isSelected && selected.length >= 6;
           const hasImage   = !!cat.image_url;
+          const hasPreview = !!(cat.sample_question_en || cat.sample_question_ar);
           // Always identify by English name internally; show Arabic label if available + lang=ar
           const displayName = lang === "ar" && cat.name_ar ? cat.name_ar : cat.name;
           return (
             <button key={cat.name} onClick={() => !disabled && handleClick(cat.name)}
-              className="rounded-2xl text-sm md:text-base font-semibold text-left transition-all overflow-hidden flex flex-col"
+              className="relative rounded-2xl text-sm md:text-base font-semibold text-left transition-all overflow-hidden flex flex-col"
               style={{ backgroundColor: isSelected ? "#d4860a22" : "#1e1530", border: `2px solid ${isSelected ? "#d4860a" : "#2e2050"}`, color: isSelected ? "#d4860a" : disabled ? "#e8d5a033" : "#e8d5a0", cursor: disabled ? "not-allowed" : "pointer" }}>
+              {/* "?" preview badge — absolute, top-left, so it never affects tile sizing.
+                  A <span role=button> (not a nested <button>) keeps the markup valid;
+                  stopPropagation prevents it from toggling category selection. */}
+              {hasPreview && (
+                <span
+                  role="button" tabIndex={0}
+                  title={t.arena.previewAria} aria-label={t.arena.previewAria}
+                  onClick={(e) => { e.stopPropagation(); setPreviewCat(cat); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setPreviewCat(cat); } }}
+                  className="absolute top-2 left-2 z-10 w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold transition-opacity hover:opacity-100"
+                  style={{ backgroundColor: "#120d1fcc", color: "#a78bfa", border: "1px solid #7c3aed88", opacity: 0.85, cursor: "pointer", backdropFilter: "blur(2px)" }}
+                >
+                  ?
+                </span>
+              )}
               {hasImage && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={cat.image_url!} alt={displayName}
@@ -299,6 +397,8 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           );
         })}
       </div>
+
+      {previewCat && <CategoryPreviewModal cat={previewCat} onClose={() => setPreviewCat(null)} />}
       <div className="flex justify-end">
         <button onClick={onNext} disabled={selected.length === 0}
           className="px-8 py-3 rounded-full font-bold text-sm"
@@ -965,9 +1065,35 @@ export default function ArenaGame() {
       })();
 
       const categoriesPromise = (async (): Promise<CategoryOption[] | null> => {
-        // First try with image_url (post-migration). If that errors because
-        // the column doesn't exist yet, fall back to the basic shape so the
-        // arena still works pre-migration.
+        // Try the rich shape first (post-migration: image + description +
+        // sample Q/A). If a column is missing, fall back step by step so the
+        // arena keeps working on an un-migrated DB.
+        const mapRich = (rows: Array<Record<string, unknown>>): CategoryOption[] =>
+          rows.map((c) => ({
+            name:               c.name_en as string,
+            name_ar:            (c.name_ar as string | null) ?? null,
+            image_url:          (c.image_url as string | null) ?? null,
+            description_en:      (c.description_en as string | null) ?? null,
+            description_ar:      (c.description_ar as string | null) ?? null,
+            sample_question_en:  (c.sample_question_en as string | null) ?? null,
+            sample_answer_en:    (c.sample_answer_en as string | null) ?? null,
+            sample_question_ar:  (c.sample_question_ar as string | null) ?? null,
+            sample_answer_ar:    (c.sample_answer_ar as string | null) ?? null,
+          }));
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          const full = await supabase
+            .from("categories")
+            .select("name_en, name_ar, image_url, description_en, description_ar, sample_question_en, sample_answer_en, sample_question_ar, sample_answer_ar")
+            .eq("active", true)
+            .order("name_en")
+            .abortSignal(ctrl.signal);
+          clearTimeout(t);
+          if (full.data && !full.error) {
+            return full.data.length > 0 ? mapRich(full.data as Array<Record<string, unknown>>) : null;
+          }
+        } catch { /* fall through */ }
         try {
           const ctrl = new AbortController();
           const t = setTimeout(() => ctrl.abort(), 5000);

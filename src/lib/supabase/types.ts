@@ -39,6 +39,13 @@ export interface Category {
   created_at: string;
   updated_at: string;
   image_url?: string | null;
+  // Required from the admin panel (see add-category-details.sql migration):
+  description_en?: string;
+  description_ar?: string;
+  sample_question_en?: string;
+  sample_answer_en?: string;
+  sample_question_ar?: string;
+  sample_answer_ar?: string;
 }
 
 export interface Question {

@@ -52,6 +52,13 @@ export default function CategoriesPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formNameAr, setFormNameAr] = useState("");
+  // New required fields — description + a sample question/answer in both languages.
+  const [formDescEn, setFormDescEn] = useState("");
+  const [formDescAr, setFormDescAr] = useState("");
+  const [formSampleQEn, setFormSampleQEn] = useState("");
+  const [formSampleAEn, setFormSampleAEn] = useState("");
+  const [formSampleQAr, setFormSampleQAr] = useState("");
+  const [formSampleAAr, setFormSampleAAr] = useState("");
   const [formImageUrl, setFormImageUrl] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string>("");
@@ -108,19 +115,37 @@ export default function CategoriesPage() {
     (c) => c.name_en.toLowerCase().includes(search.toLowerCase()) || c.name_ar.includes(search)
   );
 
+  const resetSampleFields = () => {
+    setFormDescEn(""); setFormDescAr("");
+    setFormSampleQEn(""); setFormSampleAEn("");
+    setFormSampleQAr(""); setFormSampleAAr("");
+  };
+
   const openAdd = () => {
     setEditId(null); setFormName(""); setFormNameAr("");
+    resetSampleFields();
     setFormImageUrl(null); setImageFile(null); setImageError("");
     setShowForm(true);
   };
   const openEdit = (cat: Category) => {
     setEditId(cat.id); setFormName(cat.name_en); setFormNameAr(cat.name_ar);
+    setFormDescEn(cat.description_en ?? "");   setFormDescAr(cat.description_ar ?? "");
+    setFormSampleQEn(cat.sample_question_en ?? ""); setFormSampleAEn(cat.sample_answer_en ?? "");
+    setFormSampleQAr(cat.sample_question_ar ?? ""); setFormSampleAAr(cat.sample_answer_ar ?? "");
     setFormImageUrl(cat.image_url ?? null); setImageFile(null); setImageError("");
     setShowForm(true);
   };
 
+  // Every field is required — name, Arabic name, description (both langs),
+  // and a sample question + answer in both langs.
+  const requiredFieldsFilled = () =>
+    !!formName.trim() && !!formNameAr.trim() &&
+    !!formDescEn.trim() && !!formDescAr.trim() &&
+    !!formSampleQEn.trim() && !!formSampleAEn.trim() &&
+    !!formSampleQAr.trim() && !!formSampleAAr.trim();
+
   const handleSave = async () => {
-    if (!formName.trim() || !formNameAr.trim()) return;
+    if (!requiredFieldsFilled()) return;
     setSaving(true);
     setImageError("");
 
@@ -131,10 +156,21 @@ export default function CategoriesPage() {
       else setImageError("Image upload failed (bucket missing or wrong format). Category saved without new image.");
     }
 
+    const sampleFields = {
+      description_en:     formDescEn.trim(),
+      description_ar:     formDescAr.trim(),
+      sample_question_en: formSampleQEn.trim(),
+      sample_answer_en:   formSampleAEn.trim(),
+      sample_question_ar: formSampleQAr.trim(),
+      sample_answer_ar:   formSampleAAr.trim(),
+    };
+
     if (isSupabaseConfigured) {
       const fullPayload: Record<string, unknown> = editId
-        ? { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, updated_at: new Date().toISOString() }
-        : { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, active: true, question_count: 0 };
+        ? { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, updated_at: new Date().toISOString() }
+        : { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, active: true, question_count: 0 };
+      // Fallback for a DB that hasn't run the migration yet — drops the new
+      // columns so the save still goes through (degrades gracefully).
       const basicPayload: Record<string, unknown> = editId
         ? { name_en: formName, name_ar: formNameAr, updated_at: new Date().toISOString() }
         : { name_en: formName, name_ar: formNameAr, active: true, question_count: 0 };
@@ -150,9 +186,9 @@ export default function CategoriesPage() {
       await fetchCategories();
     } else {
       if (editId) {
-        setCategories((p) => p.map((c) => c.id === editId ? { ...c, name_en: formName, name_ar: formNameAr, image_url: finalImageUrl } : c));
+        setCategories((p) => p.map((c) => c.id === editId ? { ...c, name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields } : c));
       } else {
-        setCategories((p) => [...p, { id: String(Date.now()), name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, active: true, question_count: 0, created_at: "", updated_at: "" }]);
+        setCategories((p) => [...p, { id: String(Date.now()), name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, active: true, question_count: 0, created_at: "", updated_at: "" }]);
       }
     }
 
@@ -255,9 +291,10 @@ export default function CategoriesPage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: "#00000088" }}>
-          <div className="w-full max-w-md rounded-2xl p-7 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+        <div className="fixed inset-0 flex items-center justify-center z-50 px-4 py-6" style={{ backgroundColor: "#00000088" }}>
+          <div className="w-full max-w-lg rounded-2xl p-7 flex flex-col gap-5 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
             <h2 className="text-lg font-extrabold" style={{ color: "#e8d5a0" }}>{editId ? "Edit Category" : "New Category"}</h2>
+            <p className="text-xs -mt-3" style={{ color: "#e8d5a0", opacity: 0.5 }}>All fields are required. The description and sample question power the &ldquo;?&rdquo; preview players see in the category picker.</p>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Name (English) <span style={{ color: "#f87171" }}>*</span></label>
               <input type="text" value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="e.g. Science" required className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} autoFocus />
@@ -266,6 +303,38 @@ export default function CategoriesPage() {
               <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Name (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
               <input type="text" value={formNameAr} onChange={(e) => setFormNameAr(e.target.value)} placeholder="مثال: العلوم" required className="w-full px-4 py-3 rounded-xl text-sm outline-none text-right" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", direction: "rtl" }} />
             </div>
+
+            {/* ── Description ─────────────────────────────────────────── */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Description (English) <span style={{ color: "#f87171" }}>*</span></label>
+              <textarea value={formDescEn} onChange={(e) => setFormDescEn(e.target.value)} placeholder="What this category is about — a short blurb players see in the preview." rows={2} required className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-y" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", fontFamily: "inherit" }} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Description (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
+              <textarea value={formDescAr} onChange={(e) => setFormDescAr(e.target.value)} placeholder="وصف مختصر للفئة يراه اللاعب في المعاينة." rows={2} required dir="rtl" className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-y text-right" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0", fontFamily: "inherit" }} />
+            </div>
+
+            {/* ── Sample question / answer ────────────────────────────── */}
+            <div className="rounded-xl p-4 flex flex-col gap-4" style={{ backgroundColor: "#120d1f", border: "1px dashed #2e2050" }}>
+              <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>Sample question (shown in the &ldquo;?&rdquo; preview)</p>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sample Question (English) <span style={{ color: "#f87171" }}>*</span></label>
+                <textarea value={formSampleQEn} onChange={(e) => setFormSampleQEn(e.target.value)} placeholder="e.g. What is the chemical symbol for gold?" rows={2} required className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-y" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0", fontFamily: "inherit" }} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sample Answer (English) <span style={{ color: "#f87171" }}>*</span></label>
+                <input type="text" value={formSampleAEn} onChange={(e) => setFormSampleAEn(e.target.value)} placeholder="e.g. Au" required className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sample Question (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
+                <textarea value={formSampleQAr} onChange={(e) => setFormSampleQAr(e.target.value)} placeholder="مثال: ما هو الرمز الكيميائي للذهب؟" rows={2} required dir="rtl" className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-y text-right" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0", fontFamily: "inherit" }} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sample Answer (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
+                <input type="text" value={formSampleAAr} onChange={(e) => setFormSampleAAr(e.target.value)} placeholder="مثال: Au" required dir="rtl" className="w-full px-4 py-3 rounded-xl text-sm outline-none text-right" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+              </div>
+            </div>
+
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Cover Image <span style={{ opacity: 0.4 }}>optional · PNG / JPG</span></label>
               {(imageFile || formImageUrl) && (
@@ -300,9 +369,9 @@ export default function CategoriesPage() {
             <div className="flex gap-3 mt-2">
               <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>Cancel</button>
               {(() => {
-                const allFilled = formName.trim() && formNameAr.trim();
+                const allFilled = requiredFieldsFilled();
                 return (
-                  <button onClick={handleSave} disabled={saving || !allFilled} className="flex-1 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: (saving || !allFilled) ? 0.4 : 1, cursor: (saving || !allFilled) ? "not-allowed" : "pointer" }}>
+                  <button onClick={handleSave} disabled={saving || !allFilled} title={allFilled ? undefined : "Fill in every required field first"} className="flex-1 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: (saving || !allFilled) ? 0.4 : 1, cursor: (saving || !allFilled) ? "not-allowed" : "pointer" }}>
                     {saving ? "Saving…" : editId ? "Save Changes" : "Add Category"}
                   </button>
                 );
