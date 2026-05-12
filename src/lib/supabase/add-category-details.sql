@@ -36,3 +36,9 @@ ALTER TABLE public.categories
 
 -- 3) Sanity: confirm the table is empty and the columns exist.
 --    (SELECT count(*) FROM public.categories;  -> should be 0)
+--
+-- After this runs, rebuild categories one by one from:
+--   omni-verse.shop/admin  →  Categories  →  + Add Category
+-- Every category now requires: name (EN/AR), description (EN/AR), and a
+-- sample question + answer (EN/AR). The sample drives the "?" preview that
+-- players see on the category-picker tiles.
