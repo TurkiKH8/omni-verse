@@ -384,8 +384,8 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
                   title={t.arena.previewAria} aria-label={t.arena.previewAria}
                   onClick={(e) => { e.stopPropagation(); setPreviewCat(cat); }}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setPreviewCat(cat); } }}
-                  className="absolute top-2 left-2 z-10 w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold transition-opacity hover:opacity-100"
-                  style={{ backgroundColor: "#120d1fcc", color: "#a78bfa", border: "1px solid #7c3aed88", opacity: 0.85, cursor: "pointer", backdropFilter: "blur(2px)" }}
+                  className="absolute top-2 left-2 z-10 w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold"
+                  style={{ backgroundColor: "#7c3aed", color: "#ffffff", border: "1.5px solid #c4b5fd", cursor: "pointer", boxShadow: "0 0 10px rgba(124, 58, 237, 0.7)" }}
                 >
                   ?
                 </span>
