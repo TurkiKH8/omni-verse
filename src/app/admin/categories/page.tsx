@@ -198,7 +198,7 @@ export default function CategoriesPage() {
   };
 
   const toggleHidden = async (cat: Category) => {
-    const next = !(cat as Category & { is_hidden?: boolean }).is_hidden;
+    const next = !cat.is_hidden;
     if (isSupabaseConfigured) {
       await supabase.from("categories").update({ is_hidden: next, updated_at: new Date().toISOString() }).eq("id", cat.id);
       await logAction("Toggled hidden", `${cat.name_en} → ${next ? "HIDDEN" : "VISIBLE"}`, "update");
@@ -226,7 +226,9 @@ export default function CategoriesPage() {
           <div>
             <h1 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Categories</h1>
             <p className="text-sm mt-1" style={{ color: "#e8d5a0", opacity: 0.5 }}>
-              {loading ? "Loading…" : `${categories.length} total · ${categories.filter((c) => c.active).length} active`}
+              {loading
+                ? "Loading…"
+                : `${categories.length} total · ${categories.filter((c) => c.active && !c.is_hidden).length} active · ${categories.filter((c) => c.is_hidden).length} hidden`}
               {!isSupabaseConfigured && <span style={{ color: "#f87171" }}> · Supabase not connected (demo mode)</span>}
             </p>
           </div>
@@ -257,15 +259,30 @@ export default function CategoriesPage() {
               <span className="text-sm" style={{ color: "#e8d5a0", opacity: 0.7, direction: "rtl" }}>{cat.name_ar}</span>
               <span className="text-sm text-center" style={{ color: "#e8d5a0", opacity: 0.7 }}>{cat.question_count}</span>
               <div className="flex justify-center">
-                <button onClick={() => toggleActive(cat)} className="px-2.5 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: cat.active ? "#16a34a22" : "#dc262622", color: cat.active ? "#4ade80" : "#f87171", border: `1px solid ${cat.active ? "#4ade8044" : "#f8717144"}` }}>
-                  {cat.active ? "Active" : "Off"}
-                </button>
+                {(() => {
+                  // Hidden takes priority in the badge. Clicking a Hidden badge
+                  // un-hides it; clicking Active/Off toggles the active flag.
+                  const hidden = !!cat.is_hidden;
+                  const label  = hidden ? "Hidden" : cat.active ? "Active" : "Off";
+                  const fg     = hidden ? "#38bdf8" : cat.active ? "#4ade80" : "#f87171";
+                  const bg     = hidden ? "#0ea5e922" : cat.active ? "#16a34a22" : "#dc262622";
+                  const bd     = hidden ? "#38bdf844" : cat.active ? "#4ade8044" : "#f8717144";
+                  return (
+                    <button
+                      onClick={() => (hidden ? toggleHidden(cat) : toggleActive(cat))}
+                      title={hidden ? "Hidden from players — click to make visible" : cat.active ? "Active — click to turn off" : "Off — click to turn on"}
+                      className="px-2.5 py-1 rounded-full text-xs font-bold"
+                      style={{ backgroundColor: bg, color: fg, border: `1px solid ${bd}` }}>
+                      {label}
+                    </button>
+                  );
+                })()}
               </div>
               <div className="flex items-center justify-center gap-2 flex-wrap">
                 <button onClick={() => openEdit(cat)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>Edit</button>
                 {perms.canHide && (
-                  <button onClick={() => toggleHidden(cat)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: (cat as Category & { is_hidden?: boolean }).is_hidden ? "#0ea5e922" : "#64748b22", color: (cat as Category & { is_hidden?: boolean }).is_hidden ? "#38bdf8" : "#94a3b8" }}>
-                    {(cat as Category & { is_hidden?: boolean }).is_hidden ? "Show" : "Hide"}
+                  <button onClick={() => toggleHidden(cat)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: cat.is_hidden ? "#0ea5e922" : "#64748b22", color: cat.is_hidden ? "#38bdf8" : "#94a3b8" }}>
+                    {cat.is_hidden ? "Show" : "Hide"}
                   </button>
                 )}
                 {perms.canRemove && (

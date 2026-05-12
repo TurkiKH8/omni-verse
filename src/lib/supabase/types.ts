@@ -39,6 +39,7 @@ export interface Category {
   created_at: string;
   updated_at: string;
   image_url?: string | null;
+  is_hidden?: boolean | null;
   // Required from the admin panel (see add-category-details.sql migration):
   description_en?: string;
   description_ar?: string;
