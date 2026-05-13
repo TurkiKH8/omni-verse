@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
 const adminClient = createClient(
@@ -6,8 +7,32 @@ const adminClient = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// Caller must be is_admin OR Master Omni (the same set of people who can
+// reach /admin/customers and /admin/staff in the sidebar). Without this,
+// the route would be open to anyone on the internet because the
+// service-role key bypasses RLS.
+async function authorizeCaller(): Promise<NextResponse | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_admin, rank")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (!profile?.is_admin && profile?.rank !== "Master Omni") {
+    return NextResponse.json({ error: "Forbidden — admin or Master Omni only" }, { status: 403 });
+  }
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    const denied = await authorizeCaller();
+    if (denied) return denied;
+
     const body = await request.json();
     const { action, userId, email, value } = body as {
       action: string;

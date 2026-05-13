@@ -19,7 +19,7 @@ const navItems: NavItem[] = [
   { icon: "📊", label: "Dashboard",          href: "/admin/dashboard"                                        },
   { icon: "🗂️", label: "Categories",         href: "/admin/categories", adminOnly: true, staffVisible: true  },
   { icon: "❓", label: "Questions",           href: "/admin/questions"                                        },
-  { icon: "👥", label: "Accounts",            href: "/admin/accounts",   adminOnly: true                      },
+  { icon: "👥", label: "Staff",               href: "/admin/staff",      adminOnly: true, masterOnly: true    },
   { icon: "🧑‍💼", label: "Customer Database",  href: "/admin/customers",  adminOnly: true                      },
   { icon: "🏅", label: "Ranks",               href: "/admin/ranks",         adminOnly: true, masterOnly: true    },
   { icon: "✍️", label: "Site Copy",           href: "/admin/translations",  adminOnly: true, masterOnly: true    },

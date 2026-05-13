@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 const adminClient = createClient(
@@ -8,6 +9,22 @@ const adminClient = createClient(
 
 export async function GET() {
   try {
+    // Caller must be is_admin OR Master Omni — this endpoint exposes every
+    // user's email + ban status + rank, so it must not be open to the public.
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { data: callerProfile } = await supabase
+      .from("profiles")
+      .select("is_admin, rank")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (!callerProfile?.is_admin && callerProfile?.rank !== "Master Omni") {
+      return NextResponse.json({ error: "Forbidden — admin or Master Omni only" }, { status: 403 });
+    }
+
     const { data: { users }, error: usersError } = await adminClient.auth.admin.listUsers({
       page: 1,
       perPage: 1000,
