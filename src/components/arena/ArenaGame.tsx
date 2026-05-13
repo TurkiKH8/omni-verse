@@ -23,6 +23,8 @@ interface BoardCell {
   answer_ar?: string | null;
   answered: boolean;
   image_url?: string | null;   // Per-question image
+  video_url?: string | null;   // Per-question video (MP4 / WebM / MOV)
+  audio_url?: string | null;   // Per-question audio / music
 }
 interface CategoryOption {
   name: string;
@@ -71,6 +73,8 @@ type DBQuestion = {
   question_ar?: string | null;
   answer_ar?: string | null;
   image_url?: string | null;
+  video_url?: string | null;
+  audio_url?: string | null;
   is_hidden?: boolean | null;
 };
 
@@ -170,6 +174,8 @@ async function fetchBoardFromSupabase(
           answer_ar:          picked?.answer_ar   ?? null,
           answered:           false,
           image_url:          picked?.image_url   ?? null,
+          video_url:          picked?.video_url   ?? null,
+          audio_url:          picked?.audio_url   ?? null,
         };
       });
     });
@@ -946,6 +952,15 @@ function QuestionView({ cell, tickUrl, onReveal, onReport }: { cell: BoardCell; 
             className="w-full max-h-72 object-contain rounded-xl"
             style={{ backgroundColor: "#120d1f" }} />
         )}
+        {cell.video_url && (
+          <video src={cell.video_url} controls
+            className="w-full max-h-80 rounded-xl"
+            style={{ backgroundColor: "#000" }} />
+        )}
+        {cell.audio_url && (
+          <audio src={cell.audio_url} controls
+            className="w-full" />
+        )}
         <p className="text-xl md:text-2xl font-bold leading-snug" style={{ color: "#e8d5a0" }}>{questionText}</p>
       </div>
       <button onClick={handleReveal} className="px-10 py-3 rounded-full font-bold text-sm hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>{t.arena.revealAnswer}</button>
@@ -979,6 +994,14 @@ function AnswerReveal({ cell, teams, gameMode, onAward, onNoOne, onReport }:
           <img src={cell.image_url} alt=""
             className="w-full max-h-56 object-contain rounded-xl mb-4"
             style={{ backgroundColor: "#120d1f" }} />
+        )}
+        {cell.video_url && (
+          <video src={cell.video_url} controls
+            className="w-full max-h-56 rounded-xl mb-4"
+            style={{ backgroundColor: "#000" }} />
+        )}
+        {cell.audio_url && (
+          <audio src={cell.audio_url} controls className="w-full mb-4" />
         )}
         <p className="text-base italic mb-6" style={{ color: "#e8d5a0", opacity: 0.8 }}>{questionText}</p>
         <div className="h-px mb-6" style={{ backgroundColor: "#2e2050" }} />

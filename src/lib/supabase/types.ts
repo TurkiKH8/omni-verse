@@ -60,6 +60,8 @@ export interface Question {
   created_at: string;
   categories?: { name_en: string; name_ar: string } | null;
   image_url?: string | null;
+  video_url?: string | null;
+  audio_url?: string | null;
   is_hidden?: boolean | null;
   q_index?: number | null;
 }

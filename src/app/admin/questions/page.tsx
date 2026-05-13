@@ -13,22 +13,48 @@ const FALLBACK: Question[] = [
   { id: "3", category_id: "", points: 200, question_en: "In what year did World War II end?", answer_en: "1945", question_ar: "", answer_ar: "", created_at: "", categories: { name_en: "History", name_ar: "التاريخ" } },
 ];
 
-type FormState = { category: string; points: number; question_en: string; answer_en: string; question_ar: string; answer_ar: string; language: "EN" | "AR"; image_url: string | null };
+type FormState = {
+  category: string;
+  points: number;
+  question_en: string;
+  answer_en: string;
+  question_ar: string;
+  answer_ar: string;
+  language: "EN" | "AR";
+  image_url: string | null;
+  video_url: string | null;
+  audio_url: string | null;
+};
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg"];
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
+const ALLOWED_AUDIO_TYPES = [
+  "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav",
+  "audio/mp4",  "audio/x-m4a", "audio/ogg", "audio/aac",
+];
 
-// Uploads a PNG/JPG to the public "images" bucket and returns the public URL.
-// Returns null if the bucket doesn't exist (migration not run) or upload fails.
-async function uploadImageToStorage(file: File, folder: "questions" | "categories"): Promise<string | null> {
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return null;
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+// Generic uploader for the three media buckets. Returns the public URL or
+// null if the bucket doesn't exist yet (migration not run) or upload fails.
+async function uploadMediaToStorage(
+  file: File,
+  bucket: "images" | "videos" | "audio",
+  folder: "questions" | "categories",
+  allowedTypes: string[],
+): Promise<string | null> {
+  if (!allowedTypes.includes(file.type)) return null;
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "bin";
   const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const { error } = await supabase.storage.from("images").upload(path, file, {
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
     contentType: file.type,
     upsert: false,
   });
   if (error) return null;
-  return supabase.storage.from("images").getPublicUrl(path).data.publicUrl;
+  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+// Back-compat alias kept for the categories form (or any caller importing this).
+async function uploadImageToStorage(file: File, folder: "questions" | "categories"): Promise<string | null> {
+  return uploadMediaToStorage(file, "images", folder, ALLOWED_IMAGE_TYPES);
 }
 
 type RankPerms = {
@@ -54,9 +80,13 @@ export default function QuestionsPage() {
   const [showBulk, setShowBulk] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<FormState>({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null });
+  const [form, setForm] = useState<FormState>({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string>("");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoError, setVideoError] = useState<string>("");
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioError, setAudioError] = useState<string>("");
   const [perms, setPerms] = useState<RankPerms>({ canAdd: false, canRemove: false, canBulkAdd: false, canBulkRemove: false, canHide: false });
 
   useEffect(() => {
@@ -140,58 +170,88 @@ export default function QuestionsPage() {
 
   const openAdd = () => {
     setEditId(null);
-    setForm({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null });
-    setImageFile(null);
-    setImageError("");
+    setForm({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
+    setImageFile(null);  setImageError("");
+    setVideoFile(null);  setVideoError("");
+    setAudioFile(null);  setAudioError("");
     setShowForm(true);
   };
   const openEdit = (q: Question) => {
     setEditId(q.id);
-    setForm({ category: q.categories?.name_en ?? "Science", points: q.points, question_en: q.question_en, answer_en: q.answer_en, question_ar: q.question_ar, answer_ar: q.answer_ar, language: "EN", image_url: q.image_url ?? null });
-    setImageFile(null);
-    setImageError("");
+    setForm({
+      category: q.categories?.name_en ?? "Science",
+      points: q.points,
+      question_en: q.question_en, answer_en: q.answer_en,
+      question_ar: q.question_ar, answer_ar: q.answer_ar,
+      language: "EN",
+      image_url: q.image_url ?? null,
+      video_url: q.video_url ?? null,
+      audio_url: q.audio_url ?? null,
+    });
+    setImageFile(null);  setImageError("");
+    setVideoFile(null);  setVideoError("");
+    setAudioFile(null);  setAudioError("");
     setShowForm(true);
   };
 
   const handleSave = async () => {
     if (!form.question_en.trim() || !form.answer_en.trim() || !form.question_ar.trim() || !form.answer_ar.trim()) return;
     setSaving(true);
-    setImageError("");
+    setImageError(""); setVideoError(""); setAudioError("");
 
-    // Upload new image first (if user picked one). If upload fails, keep
-    // saving the rest of the question — image is optional.
+    // Upload any new media file first. If an upload fails, keep saving the
+    // rest of the question — media is optional. The bucket may not exist
+    // yet (migration not run) which also returns null and shows an error.
     let finalImageUrl: string | null = form.image_url;
+    let finalVideoUrl: string | null = form.video_url;
+    let finalAudioUrl: string | null = form.audio_url;
+
     if (imageFile && isSupabaseConfigured) {
-      const url = await uploadImageToStorage(imageFile, "questions");
-      if (url) {
-        finalImageUrl = url;
-      } else {
-        setImageError("Image upload failed (bucket missing or wrong format). Question saved without image.");
-      }
+      const url = await uploadMediaToStorage(imageFile, "images", "questions", ALLOWED_IMAGE_TYPES);
+      if (url) finalImageUrl = url;
+      else setImageError("Image upload failed (bucket missing or wrong format). Question saved without image.");
+    }
+    if (videoFile && isSupabaseConfigured) {
+      const url = await uploadMediaToStorage(videoFile, "videos", "questions", ALLOWED_VIDEO_TYPES);
+      if (url) finalVideoUrl = url;
+      else setVideoError("Video upload failed. Run add-video-audio.sql in Supabase, or check the file type/size.");
+    }
+    if (audioFile && isSupabaseConfigured) {
+      const url = await uploadMediaToStorage(audioFile, "audio", "questions", ALLOWED_AUDIO_TYPES);
+      if (url) finalAudioUrl = url;
+      else setAudioError("Audio upload failed. Run add-video-audio.sql in Supabase, or check the file type/size.");
     }
 
     if (isSupabaseConfigured) {
       const catId = await getCategoryId(form.category);
       if (!catId) { setSaving(false); return; }
 
-      // Try with image_url, fall back to without it if the column doesn't exist
-      const fullPayload = { category_id: catId, points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: form.question_ar, answer_ar: form.answer_ar, image_url: finalImageUrl };
-      const basicPayload = { category_id: catId, points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: form.question_ar, answer_ar: form.answer_ar };
+      // Try with all media fields; fall back step by step if the column
+      // doesn't exist (so the form keeps working on a partially-migrated DB).
+      const base = {
+        category_id: catId, points: form.points,
+        question_en: form.question_en, answer_en: form.answer_en,
+        question_ar: form.question_ar, answer_ar: form.answer_ar,
+      };
+      const fullPayload  = { ...base, image_url: finalImageUrl, video_url: finalVideoUrl, audio_url: finalAudioUrl };
+      const imageOnly    = { ...base, image_url: finalImageUrl };
+      const basicPayload = base;
 
       const trySave = async (payload: Record<string, unknown>) => {
         if (editId) return supabase.from("questions").update(payload).eq("id", editId);
         return supabase.from("questions").insert(payload);
       };
-      const result = await trySave(fullPayload);
+      let result = await trySave(fullPayload);
+      if (result.error) result = await trySave(imageOnly);
       if (result.error) await trySave(basicPayload);
 
       await logAction(editId ? "Updated question" : "Created question", `${form.category} / ${form.points}pts`, editId ? "update" : "create");
       await fetchQuestions();
     } else {
       if (editId) {
-        setQuestions((p) => p.map((q) => q.id === editId ? { ...q, points: form.points, question_en: form.question_en, answer_en: form.answer_en, image_url: finalImageUrl, categories: { name_en: form.category, name_ar: "" } } : q));
+        setQuestions((p) => p.map((q) => q.id === editId ? { ...q, points: form.points, question_en: form.question_en, answer_en: form.answer_en, image_url: finalImageUrl, video_url: finalVideoUrl, audio_url: finalAudioUrl, categories: { name_en: form.category, name_ar: "" } } : q));
       } else {
-        setQuestions((p) => [...p, { id: String(Date.now()), category_id: "", points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: "", answer_ar: "", image_url: finalImageUrl, created_at: "", categories: { name_en: form.category, name_ar: "" } }]);
+        setQuestions((p) => [...p, { id: String(Date.now()), category_id: "", points: form.points, question_en: form.question_en, answer_en: form.answer_en, question_ar: "", answer_ar: "", image_url: finalImageUrl, video_url: finalVideoUrl, audio_url: finalAudioUrl, created_at: "", categories: { name_en: form.category, name_ar: "" } }]);
       }
     }
     setSaving(false);
@@ -371,6 +431,84 @@ export default function QuestionsPage() {
                 <p className="text-xs" style={{ color: "#f87171" }}>{imageError}</p>
               )}
             </div>
+
+            {/* Video upload — optional, MP4 / WebM / MOV */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>
+                Question Video <span style={{ opacity: 0.4 }}>optional · MP4 / WebM / MOV · up to 100 MB</span>
+              </label>
+              {(videoFile || form.video_url) && (
+                <div className="relative w-full rounded-xl overflow-hidden" style={{ border: "1px solid #2e2050", backgroundColor: "#120d1f" }}>
+                  <video
+                    src={videoFile ? URL.createObjectURL(videoFile) : form.video_url ?? ""}
+                    controls
+                    className="w-full max-h-56"
+                    style={{ backgroundColor: "#000" }}
+                  />
+                  <button type="button" onClick={() => { setVideoFile(null); setForm({ ...form, video_url: null }); }}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center"
+                    style={{ backgroundColor: "#dc2626", color: "#fff" }}
+                    aria-label="Remove video">×</button>
+                </div>
+              )}
+              <input type="file"
+                accept="video/mp4,video/webm,video/quicktime"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setVideoError("");
+                  if (f && !ALLOWED_VIDEO_TYPES.includes(f.type)) {
+                    setVideoError("Only MP4, WebM or MOV video files are allowed.");
+                    setVideoFile(null);
+                    return;
+                  }
+                  setVideoFile(f);
+                }}
+                className="text-xs file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:cursor-pointer"
+                style={{ color: "#e8d5a0" }}
+              />
+              {videoError && (
+                <p className="text-xs" style={{ color: "#f87171" }}>{videoError}</p>
+              )}
+            </div>
+
+            {/* Audio upload — optional, MP3 / WAV / M4A / OGG / AAC */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>
+                Question Music / Audio <span style={{ opacity: 0.4 }}>optional · MP3 / WAV / M4A / OGG · up to 20 MB</span>
+              </label>
+              {(audioFile || form.audio_url) && (
+                <div className="relative w-full rounded-xl overflow-hidden flex items-center gap-3 px-3 py-3" style={{ border: "1px solid #2e2050", backgroundColor: "#120d1f" }}>
+                  <audio
+                    src={audioFile ? URL.createObjectURL(audioFile) : form.audio_url ?? ""}
+                    controls
+                    className="flex-1 min-w-0"
+                  />
+                  <button type="button" onClick={() => { setAudioFile(null); setForm({ ...form, audio_url: null }); }}
+                    className="w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: "#dc2626", color: "#fff" }}
+                    aria-label="Remove audio">×</button>
+                </div>
+              )}
+              <input type="file"
+                accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/ogg,audio/aac"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setAudioError("");
+                  if (f && !ALLOWED_AUDIO_TYPES.includes(f.type)) {
+                    setAudioError("Only MP3, WAV, M4A, OGG or AAC audio files are allowed.");
+                    setAudioFile(null);
+                    return;
+                  }
+                  setAudioFile(f);
+                }}
+                className="text-xs file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:cursor-pointer"
+                style={{ color: "#e8d5a0" }}
+              />
+              {audioError && (
+                <p className="text-xs" style={{ color: "#f87171" }}>{audioError}</p>
+              )}
+            </div>
+
             <div className="flex gap-3 mt-2">
               <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>Cancel</button>
               {(() => {
