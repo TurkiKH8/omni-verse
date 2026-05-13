@@ -4,8 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Question } from "@/lib/supabase/types";
 
+// Fallback list used ONLY for the demo-mode mock data below. The real
+// admin form fetches the live categories from Supabase (see liveCategories
+// state in QuestionsPage), so deleting/renaming categories in /admin/
+// categories is reflected here immediately.
 const CATEGORIES = ["Science","History","Geography","Sports","Movies & TV","Music","Technology","Literature","Art","Food & Drink","Nature","Politics"];
-const POINTS = [200, 400, 600, 800, 1000, 1200];
+
+// Game logic: 24 point tiers from 100 to 2400 in steps of 100.
+const POINTS = Array.from({ length: 24 }, (_, i) => (i + 1) * 100);
 
 const FALLBACK: Question[] = [
   { id: "1", category_id: "", points: 200, question_en: "What is the chemical symbol for water?", answer_en: "H₂O", question_ar: "", answer_ar: "", created_at: "", categories: { name_en: "Science", name_ar: "العلوم" } },
@@ -80,7 +86,7 @@ export default function QuestionsPage() {
   const [showBulk, setShowBulk] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<FormState>({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
+  const [form, setForm] = useState<FormState>({ category: "", points: 100, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string>("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -88,6 +94,30 @@ export default function QuestionsPage() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioError, setAudioError] = useState<string>("");
   const [perms, setPerms] = useState<RankPerms>({ canAdd: false, canRemove: false, canBulkAdd: false, canBulkRemove: false, canHide: false });
+
+  // Live category list pulled from the categories table. Source of truth
+  // for both the filter dropdown and the form. Falls back to the static
+  // CATEGORIES list only in demo mode (when Supabase isn't configured).
+  const [liveCategories, setLiveCategories] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isSupabaseConfigured) { setLiveCategories(CATEGORIES); return; }
+    (async () => {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 5000);
+        const { data } = await supabase
+          .from("categories")
+          .select("name_en")
+          .order("name_en")
+          .abortSignal(ctrl.signal);
+        clearTimeout(t);
+        const names = (data ?? [])
+          .map((c: { name_en: string }) => c.name_en)
+          .filter(Boolean);
+        setLiveCategories(names);
+      } catch { /* leave empty — user can refresh once categories exist */ }
+    })();
+  }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -170,7 +200,7 @@ export default function QuestionsPage() {
 
   const openAdd = () => {
     setEditId(null);
-    setForm({ category: "Science", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
+    setForm({ category: liveCategories[0] ?? "", points: 100, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
     setImageFile(null);  setImageError("");
     setVideoFile(null);  setVideoError("");
     setAudioFile(null);  setAudioError("");
@@ -179,7 +209,7 @@ export default function QuestionsPage() {
   const openEdit = (q: Question) => {
     setEditId(q.id);
     setForm({
-      category: q.categories?.name_en ?? "Science",
+      category: q.categories?.name_en ?? liveCategories[0] ?? "",
       points: q.points,
       question_en: q.question_en, answer_en: q.answer_en,
       question_ar: q.question_ar, answer_ar: q.answer_ar,
@@ -320,7 +350,7 @@ export default function QuestionsPage() {
           <input type="text" placeholder="Search questions..." value={search} onChange={(e) => setSearch(e.target.value)} className="flex-1 min-w-48 px-4 py-2.5 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
           <select value={filterCat} onChange={(e) => setFilterCat(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }}>
             <option value="All">All Categories</option>
-            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+            {liveCategories.map((c) => <option key={c}>{c}</option>)}
           </select>
         </div>
 
@@ -374,7 +404,7 @@ export default function QuestionsPage() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Category</label>
                 <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="px-3 py-2.5 rounded-xl text-sm outline-none" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}>
-                  {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                  {liveCategories.map((c) => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div className="flex flex-col gap-1.5">
