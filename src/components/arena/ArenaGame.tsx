@@ -16,6 +16,7 @@ interface BoardCell {
   category_ar?: string | null; // Arabic category name (for display)
   category_image_url?: string | null; // Cover shown above column header
   points: number;
+  question_id?: string | null; // DB id of the chosen question (for seen-tracking); null for mock fills
   question: string;            // English question text (back-compat)
   answer: string;              // English answer text   (back-compat)
   question_ar?: string | null;
@@ -62,6 +63,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 type DBQuestion = {
+  id: string;
   category_id: string;
   points: number;
   question_en: string;
@@ -80,7 +82,52 @@ type DBCategoryRow = {
   is_hidden?: boolean | null;
 };
 
-async function fetchBoardFromSupabase(categories: string[], questionsPerCat: number): Promise<BoardCell[][] | null> {
+// Build one category's column of K cells (K = questionsPerCat) from its
+// question pool. Guarantees no question repeats on the column as long as the
+// pool has ≥ K questions; prefers questions the player hasn't seen (seenIds);
+// keeps an easy→hard gradient (cell i draws from the i-th slice of the
+// difficulty-sorted pool, or — for 6-cell boards — from the exact point tier).
+function pickColumnQuestions(
+  catQs: DBQuestion[],
+  questionsPerCat: number,
+  pointValues: number[],
+  standard6: boolean,
+  seenIds: Set<string>,
+): (DBQuestion | undefined)[] {
+  const sorted = [...catQs].sort((a, b) => a.points - b.points);
+  const used = new Set<string>();
+  const choose = (pool: DBQuestion[]): DBQuestion | undefined => {
+    // Preference: unseen & unused-on-this-column → unused → unused-anywhere → anything (full repeat).
+    let cand = pool.filter((q) => !used.has(q.id) && !seenIds.has(q.id));
+    if (cand.length === 0) cand = pool.filter((q) => !used.has(q.id));
+    if (cand.length === 0) cand = sorted.filter((q) => !used.has(q.id));
+    if (cand.length === 0) cand = sorted;
+    if (cand.length === 0) return undefined;
+    const picked = cand[Math.floor(Math.random() * cand.length)];
+    used.add(picked.id);
+    return picked;
+  };
+  return pointValues.map((pv, idx) => {
+    let pool: DBQuestion[];
+    if (standard6) {
+      pool = sorted.filter((q) => q.points === pv);
+      if (pool.length === 0) pool = sorted;
+    } else {
+      // Proportional slice so cell i sits at difficulty rank ≈ i/K. Always ≥1 wide.
+      const lo = Math.floor((idx * sorted.length) / questionsPerCat);
+      const hi = Math.max(lo + 1, Math.floor(((idx + 1) * sorted.length) / questionsPerCat));
+      pool = sorted.slice(lo, hi);
+      if (pool.length === 0) pool = sorted;
+    }
+    return choose(pool);
+  });
+}
+
+async function fetchBoardFromSupabase(
+  categories: string[],
+  questionsPerCat: number,
+  seenIds: Set<string>,
+): Promise<BoardCell[][] | null> {
   if (!isSupabaseConfigured) return null;
   try {
     // SELECT * always works regardless of which optional columns exist
@@ -105,27 +152,18 @@ async function fetchBoardFromSupabase(categories: string[], questionsPerCat: num
     const standard6  = questionsPerCat === 6;
 
     return categories.map((catName) => {
-      const catRow = cats!.find((c) => c.name_en === catName);
-      const catQs  = qs!.filter((x) => x.category_id === catRow?.id);
+      const catRow = cats.find((c) => c.name_en === catName);
+      const catQs  = qs.filter((x) => x.category_id === catRow?.id);
+      const picks  = pickColumnQuestions(catQs, questionsPerCat, pointValues, standard6, seenIds);
 
       return pointValues.map((pv, idx) => {
-        let picked: DBQuestion | undefined;
-        if (standard6) {
-          const bucket = catQs.filter((q) => q.points === pv);
-          picked = bucket.length > 0
-            ? bucket[Math.floor(Math.random() * bucket.length)]
-            : shuffle(catQs)[idx];
-        } else {
-          const sorted     = [...catQs].sort((a, b) => a.points - b.points);
-          const bucketSize = Math.max(1, Math.ceil(sorted.length / questionsPerCat));
-          const bucket     = sorted.slice(idx * bucketSize, (idx + 1) * bucketSize);
-          picked = bucket.length > 0 ? bucket[Math.floor(Math.random() * bucket.length)] : sorted[idx];
-        }
+        const picked = picks[idx];
         return {
           category:           catName,
           category_ar:        catRow?.name_ar ?? null,
           category_image_url: catRow?.image_url ?? null,
           points:             pv,
+          question_id:        picked?.id ?? null,
           question:           picked?.question_en ?? `${catName} – ${pv} pts`,
           answer:             picked?.answer_en   ?? "—",
           question_ar:        picked?.question_ar ?? null,
@@ -144,6 +182,7 @@ function buildBoardFromMock(categories: string[], questionsPerCat: number): Boar
     const qs = shuffle(MOCK_QUESTIONS[cat] ?? []);
     return pointValues.map((pv, idx) => ({
       category: cat, points: pv,
+      question_id: null,
       question: qs[idx]?.question ?? `[Mock] ${cat} – question ${idx + 1}`,
       answer:   qs[idx]?.answer   ?? "—",
       answered: false,
@@ -333,18 +372,70 @@ function CategoryPreviewModal({ cat, onClose }: { cat: CategoryOption; onClose: 
   );
 }
 
+// ─── Low-Questions Warning Modal ──────────────────────────────────────────────
+// Opened from the red "!" badge on a category tile when this player has fewer
+// unseen questions in it than a game would pull. Offers: take it anyway, or
+// pick another category instead.
+
+function LowQuestionsModal({ cat, onAnyway, onClose }:
+  { cat: CategoryOption; onAnyway: () => void; onClose: () => void }) {
+  const { t, lang } = useLanguage();
+  const name = lang === "ar" && cat.name_ar ? cat.name_ar : cat.name;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6" style={{ backgroundColor: "#000000aa" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl p-6 md:p-7 flex flex-col gap-5"
+           style={{ backgroundColor: "#1e1530", border: "1px solid #dc262666" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">⚠️</span>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-lg font-extrabold truncate" style={{ color: "#f87171" }}>{t.arena.lowQTitle}</h3>
+            <p className="text-xs truncate" style={{ color: "#e8d5a0", opacity: 0.55 }}>{name}</p>
+          </div>
+          <button onClick={onClose} className="text-lg leading-none shrink-0" style={{ color: "#e8d5a0", opacity: 0.5 }} aria-label={t.arena.lowQNewCat}>✕</button>
+        </div>
+        <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0" }}>{t.arena.lowQBody}</p>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
+          <button onClick={onAnyway} className="px-5 py-2.5 rounded-full text-sm font-medium"
+            style={{ border: "1px solid #2e2050", color: "#e8d5a0", cursor: "pointer" }}>
+            {t.arena.lowQAnyway}
+          </button>
+          <button onClick={onClose} className="px-5 py-2.5 rounded-full text-sm font-bold"
+            style={{ backgroundColor: "#d4860a", color: "#120d1f", cursor: "pointer" }}>
+            {t.arena.lowQNewCat}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Category Select ──────────────────────────────────────────────────────────
 
-function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner, onNext }:
-  { selected: string[]; coins: number; categories: CategoryOption[]; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
+function CategorySelect({ selected, coins, categories, unseenByCategory, onToggle, onShowNoBanner, onNext }:
+  { selected: string[]; coins: number; categories: CategoryOption[]; unseenByCategory: Record<string, number>; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
   const { t, lang } = useLanguage();
   const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
   const [previewCat, setPreviewCat] = useState<CategoryOption | null>(null);
+  const [lowQCat,   setLowQCat]   = useState<CategoryOption | null>(null);
+  const [acked,     setAcked]     = useState<Set<string>>(new Set()); // tiles the player said "anyway" for
 
   const handleClick = (catName: string) => {
     if (selected.includes(catName)) { onToggle(catName); return; }
     if (coins <= selected.length) { onShowNoBanner(); return; }
     onToggle(catName);
+  };
+
+  // How many fresh questions a game would pull from a category if it were the
+  // (selected.length + 1)-th one picked. With nothing selected we don't know
+  // the game size yet, so no warning shows.
+  const gameSizeIfAdded = QUESTIONS_PER_CATEGORY[Math.min(6, selected.length + 1)] ?? 6;
+  const isLowOnQuestions = (cat: CategoryOption, isSelected: boolean, disabled: boolean): boolean => {
+    if (selected.length === 0) return false;       // need ≥1 picked to know the game size
+    if (isSelected || disabled) return false;       // only warn on pickable, unpicked tiles
+    if (acked.has(cat.name)) return false;          // player already chose "I want it anyway"
+    const unseen = unseenByCategory[cat.name];
+    if (unseen === undefined) return false;         // unknown → don't warn
+    return unseen < gameSizeIfAdded;
   };
 
   return (
@@ -369,13 +460,14 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
           const disabled   = !isSelected && selected.length >= 6;
           const hasImage   = !!cat.image_url;
           const hasPreview = !!(cat.sample_question_en || cat.sample_question_ar);
+          const lowQ       = isLowOnQuestions(cat, isSelected, disabled);
           // Always identify by English name internally; show Arabic label if available + lang=ar
           const displayName = lang === "ar" && cat.name_ar ? cat.name_ar : cat.name;
           return (
             <button key={cat.name} onClick={() => !disabled && handleClick(cat.name)}
               className="relative rounded-2xl text-sm md:text-base font-semibold text-left transition-all overflow-hidden flex flex-col"
               style={{ backgroundColor: isSelected ? "#d4860a22" : "#1e1530", border: `2px solid ${isSelected ? "#d4860a" : "#2e2050"}`, color: isSelected ? "#d4860a" : disabled ? "#e8d5a033" : "#e8d5a0", cursor: disabled ? "not-allowed" : "pointer" }}>
-              {/* "?" preview badge — absolute, top-left, so it never affects tile sizing.
+              {/* "?" preview badge — top-left, absolute, never affects tile sizing.
                   A <span role=button> (not a nested <button>) keeps the markup valid;
                   stopPropagation prevents it from toggling category selection. */}
               {hasPreview && (
@@ -388,6 +480,19 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
                   style={{ backgroundColor: "#7c3aed", color: "#ffffff", border: "1.5px solid #c4b5fd", cursor: "pointer", boxShadow: "0 0 10px rgba(124, 58, 237, 0.7)" }}
                 >
                   ?
+                </span>
+              )}
+              {/* Red "!" low-questions badge — top-right, absolute, pulses softly. */}
+              {lowQ && (
+                <span
+                  role="button" tabIndex={0}
+                  title={t.arena.lowQAria} aria-label={t.arena.lowQAria}
+                  onClick={(e) => { e.stopPropagation(); setLowQCat(cat); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setLowQCat(cat); } }}
+                  className="attention-pulse-red absolute top-2 right-2 z-10 w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold"
+                  style={{ backgroundColor: "#dc2626", color: "#ffffff", border: "1.5px solid #fca5a5", cursor: "pointer" }}
+                >
+                  !
                 </span>
               )}
               {hasImage && (
@@ -405,6 +510,18 @@ function CategorySelect({ selected, coins, categories, onToggle, onShowNoBanner,
       </div>
 
       {previewCat && <CategoryPreviewModal cat={previewCat} onClose={() => setPreviewCat(null)} />}
+      {lowQCat && (
+        <LowQuestionsModal
+          cat={lowQCat}
+          onClose={() => setLowQCat(null)}
+          onAnyway={() => {
+            const name = lowQCat.name;
+            setAcked((prev) => new Set(prev).add(name));
+            handleClick(name);
+            setLowQCat(null);
+          }}
+        />
+      )}
       <div className="flex justify-end">
         <button onClick={onNext} disabled={selected.length === 0}
           className="px-8 py-3 rounded-full font-bold text-sm"
@@ -939,6 +1056,9 @@ export default function ArenaGame() {
   // Starts empty — categories come from Supabase. No hardcoded fallback list:
   // an empty DB shows an empty picker, which is the truthful state.
   const [liveCategories, setLiveCategories] = useState<CategoryOption[]>([]);
+  // categoryName -> how many questions in it this player hasn't seen yet.
+  // Drives the red "!" warning badge on the picker.
+  const [unseenByCategory, setUnseenByCategory] = useState<Record<string, number>>({});
 
   const [step,     setStep]     = useState<Step>("categories");
   const [selectedCategories, setSelected] = useState<string[]>([]);
@@ -1071,11 +1191,25 @@ export default function ArenaGame() {
       })();
 
       const categoriesPromise = (async (): Promise<CategoryOption[] | null> => {
-        // Try the rich shape first (post-migration: image + description +
-        // sample Q/A). If a column is missing, fall back step by step so the
-        // arena keeps working on an un-migrated DB.
-        const mapRich = (rows: Array<Record<string, unknown>>): CategoryOption[] =>
-          rows.map((c) => ({
+        // Use select("*") so a single query works on any schema state
+        // (pre- or post-migration), then drop hidden rows client-side.
+        // is_hidden may be undefined on un-migrated DBs — undefined is
+        // falsy, so unmigrated rows correctly stay visible.
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 5000);
+          const res = await supabase
+            .from("categories")
+            .select("*")
+            .eq("active", true)
+            .order("name_en")
+            .abortSignal(ctrl.signal);
+          clearTimeout(t);
+          if (res.error || !res.data) return null;
+          const rows = (res.data as Array<Record<string, unknown>>).filter(
+            (c) => !(c.is_hidden as boolean | null | undefined),
+          );
+          return rows.map((c) => ({
             name:               c.name_en as string,
             name_ar:            (c.name_ar as string | null) ?? null,
             image_url:          (c.image_url as string | null) ?? null,
@@ -1086,58 +1220,48 @@ export default function ArenaGame() {
             sample_question_ar:  (c.sample_question_ar as string | null) ?? null,
             sample_answer_ar:    (c.sample_answer_ar as string | null) ?? null,
           }));
-        try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 5000);
-          const full = await supabase
-            .from("categories")
-            .select("name_en, name_ar, image_url, description_en, description_ar, sample_question_en, sample_answer_en, sample_question_ar, sample_answer_ar")
-            .eq("active", true)
-            .order("name_en")
-            .abortSignal(ctrl.signal);
-          clearTimeout(t);
-          if (full.data && !full.error) {
-            // Return whatever the DB has — including [] when it's empty.
-            // No fallback to a hardcoded list.
-            return mapRich(full.data as Array<Record<string, unknown>>);
-          }
-        } catch { /* fall through */ }
-        try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 5000);
-          const full = await supabase
-            .from("categories")
-            .select("name_en, image_url")
-            .eq("active", true)
-            .order("name_en")
-            .abortSignal(ctrl.signal);
-          clearTimeout(t);
-          if (full.data && !full.error) {
-            const arr = full.data as Array<{ name_en: string; image_url?: string | null }>;
-            return arr.length > 0 ? arr.map((c) => ({ name: c.name_en, image_url: c.image_url ?? null })) : null;
-          }
-        } catch { /* fall through */ }
-        try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 5000);
-          const { data } = await supabase
-            .from("categories")
-            .select("name_en")
-            .eq("active", true)
-            .order("name_en")
-            .abortSignal(ctrl.signal);
-          clearTimeout(t);
-          return data && data.length > 0
-            ? data.map((c) => ({ name: c.name_en as string }))
-            : null;
         } catch { return null; }
       })();
 
-      const [coinsValue, categoryList] = await Promise.all([profilePromise, categoriesPromise]);
+      // Per-category "unseen by this player" counts for the red "!" badge.
+      // (Fetches all visible question ids + this user's seen ids — fine for
+      // the current bank size; could move to an RPC if the bank gets huge.)
+      const unseenPromise = (async (): Promise<Record<string, number>> => {
+        try {
+          const [qRes, seenRes, catRes] = await Promise.all([
+            supabase.from("questions").select("id, category_id, is_hidden"),
+            supabase.from("user_seen_questions").select("question_id").eq("user_id", userIdLocal!),
+            supabase.from("categories").select("id, name_en"),
+          ]);
+          const idToCat: Record<string, string> = {};
+          const totalByCat: Record<string, number> = {};
+          for (const q of (qRes.data ?? []) as Array<{ id: string; category_id: string; is_hidden?: boolean | null }>) {
+            if (q.is_hidden) continue;
+            idToCat[q.id] = q.category_id;
+            totalByCat[q.category_id] = (totalByCat[q.category_id] ?? 0) + 1;
+          }
+          const seenByCat: Record<string, number> = {};
+          for (const r of (seenRes.data ?? []) as Array<{ question_id: string }>) {
+            const cid = idToCat[r.question_id];
+            if (cid) seenByCat[cid] = (seenByCat[cid] ?? 0) + 1;
+          }
+          const catIdToName: Record<string, string> = {};
+          for (const c of (catRes.data ?? []) as Array<{ id: string; name_en: string }>) catIdToName[c.id] = c.name_en;
+          const out: Record<string, number> = {};
+          for (const [cid, total] of Object.entries(totalByCat)) {
+            const name = catIdToName[cid];
+            if (name) out[name] = Math.max(0, total - (seenByCat[cid] ?? 0));
+          }
+          return out;
+        } catch { return {}; }
+      })();
+
+      const [coinsValue, categoryList, unseen] = await Promise.all([profilePromise, categoriesPromise, unseenPromise]);
 
       if (cancelled) return;
       setCoins(coinsValue);
       if (categoryList) setLiveCategories(categoryList);
+      setUnseenByCategory(unseen);
       finishWithDefaults(userIdLocal);
     })();
 
@@ -1218,7 +1342,18 @@ export default function ArenaGame() {
     }
 
     const questionsPerCat = QUESTIONS_PER_CATEGORY[selectedCategories.length] ?? 6;
-    const dbBoard   = await fetchBoardFromSupabase(selectedCategories, questionsPerCat);
+
+    // What has this player already seen? The board-builder uses it to prefer
+    // fresh questions; failing to fetch just means no preference (harmless).
+    let seenIds = new Set<string>();
+    if (isSupabaseConfigured && userId) {
+      try {
+        const { data } = await supabase.from("user_seen_questions").select("question_id").eq("user_id", userId);
+        if (data) seenIds = new Set((data as Array<{ question_id: string }>).map((r) => r.question_id));
+      } catch { /* ignore */ }
+    }
+
+    const dbBoard   = await fetchBoardFromSupabase(selectedCategories, questionsPerCat, seenIds);
     const builtBoard = dbBoard ?? buildBoardFromMock(selectedCategories, questionsPerCat);
     const initialTeams: Team[] = Array.from({ length: teamCount }, (_, i) => ({ id: i, name: teamNames[i] || `Team ${i + 1}`, score: 0 }));
 
@@ -1226,6 +1361,18 @@ export default function ArenaGame() {
     setTeams(initialTeams);
     setSoloScore(0);
     setSessionSaved(false);
+
+    // Record every real question on this board as "seen" by the player.
+    // Fire-and-forget — don't block game start; duplicates are ignored.
+    if (isSupabaseConfigured && userId) {
+      const rows = builtBoard.flat()
+        .map((c) => c.question_id)
+        .filter((id): id is string => !!id)
+        .map((question_id) => ({ user_id: userId, question_id }));
+      if (rows.length > 0) {
+        supabase.from("user_seen_questions").upsert(rows, { onConflict: "user_id,question_id", ignoreDuplicates: true }).then(() => {});
+      }
+    }
 
     // Persist the new active game so refresh/close → can be resumed via /history.
     const newId = await createActiveSession(
@@ -1324,6 +1471,7 @@ export default function ArenaGame() {
 
       {step === "categories" && (
         <CategorySelect selected={selectedCategories} coins={coins} categories={liveCategories}
+          unseenByCategory={unseenByCategory}
           onToggle={toggleCategory} onShowNoBanner={() => setShowBanner(true)} onNext={() => setStep("gameMode")} />
       )}
       {step === "gameMode" && (

@@ -158,6 +158,11 @@ export const TRANSLATIONS = {
       previewReveal:    "Reveal Answer",
       previewAnswer:    "Answer",
       previewClose:     "Close",
+      lowQTitle:        "Running low on new questions",
+      lowQBody:         "You've already seen most of the questions in this category. Pick a different one for a fresher game, or play it anyway and you may see repeats.",
+      lowQAnyway:       "Play anyway",
+      lowQNewCat:       "Pick another",
+      lowQAria:         "Few new questions left",
     },
     history: {
       title:        "Game History",
@@ -389,6 +394,11 @@ export const TRANSLATIONS = {
       previewReveal:    "اعرض الإجابة",
       previewAnswer:    "الإجابة",
       previewClose:     "إغلاق",
+      lowQTitle:        "عدد الأسئلة الجديدة قليل",
+      lowQBody:         "لقد رأيت معظم أسئلة هذه الفئة. اختر فئة أخرى للعب جديد، أو العب على أي حال وقد ترى أسئلة مكررة.",
+      lowQAnyway:       "العب على أي حال",
+      lowQNewCat:       "اختر فئة أخرى",
+      lowQAria:         "عدد الأسئلة الجديدة قليل",
     },
     history: {
       title:        "سجل اللعب",
