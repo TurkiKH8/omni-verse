@@ -83,13 +83,6 @@ body {
   box-shadow: 0 0 6px 1px rgba(255, 230, 170, 0.55);
   will-change: transform, opacity;
 }
-.galaxy-planet {
-  position: absolute;
-  border-radius: 9999px;
-  transform: translate3d(-50%, -50%, 0);
-  filter: blur(2px);
-  will-change: transform;
-}
 @keyframes galaxy-twinkle {
   0%, 100% { opacity: 0.15; }
   50%      { opacity: 0.95; }
@@ -99,11 +92,92 @@ body {
 @keyframes gd2 { from { transform: translate3d(0,0,0); }      to { transform: translate3d(-24px,16px,0); } }
 @keyframes gd3 { from { transform: translate3d(0,0,0); }      to { transform: translate3d(14px,26px,0); } }
 @keyframes gd4 { from { transform: translate3d(0,0,0); }      to { transform: translate3d(-16px,-18px,0); } }
-@keyframes gp1 { from { transform: translate3d(-50%,-50%,0) scale(1); }    to { transform: translate3d(calc(-50% + 30px),calc(-50% - 24px),0) scale(1.06); } }
-@keyframes gp2 { from { transform: translate3d(-50%,-50%,0) scale(1); }    to { transform: translate3d(calc(-50% - 36px),calc(-50% + 28px),0) scale(1.04); } }
-@keyframes gp3 { from { transform: translate3d(-50%,-50%,0) scale(1); }    to { transform: translate3d(calc(-50% + 22px),calc(-50% + 30px),0) scale(1.05); } }
+
+/* ── The edge-on spiral galaxy (layered gradients, no image) ───────────────
+   Placed low + tilted diagonally so titles/buttons near the top stay clear.
+   The tilt is baked into the transform; the swing keyframe keeps the tilt
+   while it slowly drifts. */
+.galaxy-spiral {
+  position: absolute;
+  left: 50%;
+  top: 74%;
+  width: 130vw;
+  height: 62vh;
+  transform: translate(-50%, -50%) rotate(-20deg);
+  animation: galaxy-swing 82s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.gs-halo, .gs-disk, .gs-dust, .gs-core {
+  position: absolute;
+  border-radius: 50%;
+}
+/* Soft outer halo */
+.gs-halo {
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%; height: 60%;
+  background: radial-gradient(ellipse at center,
+              rgba(232,213,160,0.10) 0%,
+              rgba(124,58,237,0.07) 42%,
+              transparent 72%);
+  filter: blur(16px);
+}
+/* Bright lens-shaped disk */
+.gs-disk {
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 82%; height: 22%;
+  background: radial-gradient(ellipse at center,
+              rgba(255,246,225,0.42) 0%,
+              rgba(232,213,160,0.24) 28%,
+              rgba(212,134,10,0.12) 52%,
+              transparent 78%);
+  filter: blur(7px);
+}
+/* Dark dust lane carved across the disk, just below the axis */
+.gs-dust {
+  left: 50%; top: 54%;
+  transform: translate(-50%, -50%);
+  width: 76%; height: 6%;
+  background: radial-gradient(ellipse at center,
+              rgba(10,6,20,0.78) 0%,
+              rgba(18,13,31,0.42) 55%,
+              transparent 80%);
+  filter: blur(5px);
+}
+/* Hot glowing core, nudged off-centre like the reference */
+.gs-core {
+  left: 45%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 15%; height: 15%;
+  background: radial-gradient(circle at center,
+              #ffffff 0%,
+              #ffe6aa 15%,
+              #d4860a 40%,
+              rgba(212,134,10,0.28) 60%,
+              transparent 76%);
+  filter: blur(2px);
+}
+@keyframes galaxy-swing {
+  from { transform: translate(-50%, -50%) rotate(-20deg); }
+  to   { transform: translate(calc(-50% + 26px), calc(-50% - 16px)) rotate(-20deg); }
+}
+@media (max-width: 768px) {
+  /* Quieter + repositioned so it never crowds a phone screen */
+  .galaxy-spiral { width: 178vw; height: 46vh; top: 80%; opacity: 0.7; }
+}
+/* A few of the biggest stars get faint diffraction spikes, like the photo. */
+.galaxy-star.big::before,
+.galaxy-star.big::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  background: rgba(255, 240, 205, 0.5);
+}
+.galaxy-star.big::before { width: 1px;  height: 16px; transform: translate(-50%, -50%); }
+.galaxy-star.big::after  { width: 16px; height: 1px;  transform: translate(-50%, -50%); }
 /* Respect visitors who ask their device to reduce motion: hold it still. */
 @media (prefers-reduced-motion: reduce) {
-  .galaxy-fade { animation: none; opacity: 0.6; }
-  .galaxy-star, .galaxy-planet { animation: none !important; }
+  .galaxy-fade { animation: none; opacity: 0.62; }
+  .galaxy-star, .galaxy-spiral { animation: none !important; }
 }
