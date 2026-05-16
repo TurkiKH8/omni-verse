@@ -53,6 +53,7 @@ export default function CategoriesPage() {
   const [imageError, setImageError] = useState<string>("");
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [mutError, setMutError] = useState("");
   const [perms, setPerms] = useState<RankPerms>({ canAdd: false, canRemove: false, canHide: false });
 
   useEffect(() => {
@@ -188,8 +189,10 @@ export default function CategoriesPage() {
   };
 
   const handleDelete = async (id: string, name: string) => {
+    setMutError("");
     if (isSupabaseConfigured) {
-      await supabase.from("categories").delete().eq("id", id);
+      const { error } = await supabase.from("categories").delete().eq("id", id);
+      if (error) { setMutError(`Could not delete "${name}": ${error.message ?? "unknown database error"}. Nothing was changed.`); return; }
       await logAction("Deleted category", name, "delete");
       await fetchCategories();
     } else {
@@ -198,9 +201,17 @@ export default function CategoriesPage() {
   };
 
   const toggleHidden = async (cat: Category) => {
+    setMutError("");
     const next = !cat.is_hidden;
     if (isSupabaseConfigured) {
-      await supabase.from("categories").update({ is_hidden: next, updated_at: new Date().toISOString() }).eq("id", cat.id);
+      // First attempt includes updated_at; if that column is missing on the
+      // DB the update fails, so retry without it before giving up.
+      let { error } = await supabase.from("categories").update({ is_hidden: next, updated_at: new Date().toISOString() }).eq("id", cat.id);
+      if (error) ({ error } = await supabase.from("categories").update({ is_hidden: next }).eq("id", cat.id));
+      if (error) {
+        setMutError(`Could not ${next ? "hide" : "unhide"} "${cat.name_en}": ${error.message ?? "unknown database error"}. The category was NOT changed.`);
+        return;
+      }
       await logAction("Toggled hidden", `${cat.name_en} → ${next ? "HIDDEN" : "VISIBLE"}`, "update");
       await fetchCategories();
     } else {
@@ -209,9 +220,15 @@ export default function CategoriesPage() {
   };
 
   const toggleActive = async (cat: Category) => {
+    setMutError("");
     const next = !cat.active;
     if (isSupabaseConfigured) {
-      await supabase.from("categories").update({ active: next, updated_at: new Date().toISOString() }).eq("id", cat.id);
+      let { error } = await supabase.from("categories").update({ active: next, updated_at: new Date().toISOString() }).eq("id", cat.id);
+      if (error) ({ error } = await supabase.from("categories").update({ active: next }).eq("id", cat.id));
+      if (error) {
+        setMutError(`Could not turn "${cat.name_en}" ${next ? "on" : "off"}: ${error.message ?? "unknown database error"}. Nothing was changed.`);
+        return;
+      }
       await logAction("Toggled category", `${cat.name_en} → ${next ? "ON" : "OFF"}`, "update");
       await fetchCategories();
     } else {
@@ -247,6 +264,10 @@ export default function CategoriesPage() {
           className="w-full px-4 py-3 rounded-xl text-sm outline-none"
           style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }}
         />
+
+        {mutError && (
+          <p className="text-sm rounded-xl px-4 py-3" style={{ color: "#fca5a5", backgroundColor: "#dc262622", border: "1px solid #dc262655" }}>{mutError}</p>
+        )}
 
         <div className="overflow-x-auto">
         <div className="rounded-2xl overflow-hidden min-w-[560px]" style={{ border: "1px solid #2e2050" }}>
