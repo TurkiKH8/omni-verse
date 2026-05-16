@@ -14,7 +14,7 @@ export default function Home() {
   ];
 
   return (
-    <div className="flex flex-col min-h-screen relative overflow-hidden" style={{ backgroundColor: "#120d1f" }}>
+    <div className="flex flex-col min-h-screen relative overflow-hidden" style={{ backgroundColor: "transparent" }}>
       {/* Corner blobs */}
       <div className="absolute top-0 left-0 w-96 h-96 rounded-full pointer-events-none" style={{ background: "radial-gradient(circle, #3d0a0a 0%, transparent 70%)", transform: "translate(-40%, -40%)", opacity: 0.7 }} />
       <div className="absolute top-0 right-0 w-96 h-96 rounded-full pointer-events-none" style={{ background: "radial-gradient(circle, #3d0a0a 0%, transparent 70%)", transform: "translate(40%, -40%)", opacity: 0.7 }} />

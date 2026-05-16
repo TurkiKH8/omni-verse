@@ -28,7 +28,7 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: "#120d1f" }}>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: "transparent" }}>
       <div className="w-full max-w-sm flex flex-col gap-6">
 
         {/* Logo */}

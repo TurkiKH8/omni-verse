@@ -49,3 +49,62 @@ body {
 .attention-pulse-red {
   animation: attention-pulse-red 1.5s ease-out infinite;
 }
+
+/* ── Front-end galaxy backdrop ──────────────────────────────────────────────
+   Decorative only. Fixed layer that sits behind every customer page (those
+   wrappers are transparent so this shows through). Motion is deliberately
+   tiny and very slow so it reads as "premium", never distracting. */
+.galaxy-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -10;          /* above the body base colour, behind page content */
+  pointer-events: none;
+  overflow: hidden;
+}
+.galaxy-arc {
+  position: absolute;
+  inset: 0;
+  background-image: url("/galaxy-arc.png");
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: auto 116%;
+  opacity: 0.5;
+  will-change: transform, opacity;
+  animation: galaxy-drift 46s ease-in-out infinite alternate,
+             galaxy-breathe 15s ease-in-out infinite;
+}
+@media (max-width: 768px) {
+  /* Quieter on phones so it never crowds the content */
+  .galaxy-arc {
+    opacity: 0.26;
+    background-size: auto 100%;
+    background-position: right top;
+  }
+}
+@keyframes galaxy-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(-12px, 9px, 0) scale(1.04); }
+}
+@keyframes galaxy-breathe {
+  0%, 100% { opacity: 0.42; }
+  50%      { opacity: 0.58; }
+}
+.galaxy-twinkle span {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: #ffd98a;
+  box-shadow: 0 0 6px 1px rgba(255, 217, 138, 0.75);
+  opacity: 0;
+  animation: galaxy-twinkle 6.5s ease-in-out infinite;
+}
+@keyframes galaxy-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  48%, 56% { opacity: 0.85; transform: scale(1); }
+}
+/* Respect visitors who ask their device to reduce motion: keep it still. */
+@media (prefers-reduced-motion: reduce) {
+  .galaxy-arc { animation: none; }
+  .galaxy-twinkle span { animation: none; opacity: 0; }
+}

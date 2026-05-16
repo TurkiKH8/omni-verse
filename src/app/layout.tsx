@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import GalaxyBackdrop from "@/components/GalaxyBackdrop";
 import BgMusic from "@/components/BgMusic";
 import AdminButton from "@/components/AdminButton";
 import AfkMonitor from "@/components/AfkMonitor";
@@ -31,6 +32,7 @@ export default function RootLayout({
     <html lang="en" className={`${geist.variable} h-full`}>
       <body className="min-h-full flex flex-col antialiased" style={{ backgroundColor: "#120d1f", color: "#e8d5a0" }}>
         <LanguageProvider>
+          <GalaxyBackdrop />
           {children}
           <BgMusic />
           <AdminButton />
