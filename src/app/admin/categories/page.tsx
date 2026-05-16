@@ -238,8 +238,8 @@ export default function CategoriesPage() {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8">
-      <div className="max-w-4xl mx-auto flex flex-col gap-6">
-        <div className="flex items-center justify-between">
+      <div className="max-w-5xl mx-auto flex flex-col gap-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Categories</h1>
             <p className="text-sm mt-1" style={{ color: "#e8d5a0", opacity: 0.5 }}>
@@ -269,53 +269,50 @@ export default function CategoriesPage() {
           <p className="text-sm rounded-xl px-4 py-3" style={{ color: "#fca5a5", backgroundColor: "#dc262622", border: "1px solid #dc262655" }}>{mutError}</p>
         )}
 
-        <div className="overflow-x-auto">
-        <div className="rounded-2xl overflow-hidden min-w-[560px]" style={{ border: "1px solid #2e2050" }}>
-          <div className="grid px-5 py-3 text-xs font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 1fr 80px 80px 100px", backgroundColor: "#0d091a", color: "#e8d5a0", opacity: 0.5 }}>
-            <span>Name (EN)</span><span>Name (AR)</span><span className="text-center">Questions</span><span className="text-center">Status</span><span className="text-center">Actions</span>
-          </div>
-          {filtered.map((cat, i) => (
-            <div key={cat.id} className="grid px-5 py-4 items-center" style={{ gridTemplateColumns: "1fr 1fr 80px 80px 100px", borderTop: i === 0 ? "none" : "1px solid #2e2050", backgroundColor: i % 2 === 0 ? "#1e1530" : "#1a1228" }}>
-              <span className="text-sm font-medium" style={{ color: "#e8d5a0" }}>{cat.name_en}</span>
-              <span className="text-sm" style={{ color: "#e8d5a0", opacity: 0.7, direction: "rtl" }}>{cat.name_ar}</span>
-              <span className="text-sm text-center" style={{ color: "#e8d5a0", opacity: 0.7 }}>{cat.question_count}</span>
-              <div className="flex justify-center">
-                {(() => {
-                  // Hidden takes priority in the badge. Clicking a Hidden badge
-                  // un-hides it; clicking Active/Off toggles the active flag.
-                  const hidden = !!cat.is_hidden;
-                  const label  = hidden ? "Hidden" : cat.active ? "Active" : "Off";
-                  const fg     = hidden ? "#38bdf8" : cat.active ? "#4ade80" : "#f87171";
-                  const bg     = hidden ? "#0ea5e922" : cat.active ? "#16a34a22" : "#dc262622";
-                  const bd     = hidden ? "#38bdf844" : cat.active ? "#4ade8044" : "#f8717144";
-                  return (
-                    <button
-                      onClick={() => (hidden ? toggleHidden(cat) : toggleActive(cat))}
-                      title={hidden ? "Hidden from players — click to make visible" : cat.active ? "Active — click to turn off" : "Off — click to turn on"}
-                      className="px-2.5 py-1 rounded-full text-xs font-bold"
-                      style={{ backgroundColor: bg, color: fg, border: `1px solid ${bd}` }}>
-                      {label}
-                    </button>
-                  );
-                })()}
-              </div>
-              <div className="flex items-center justify-center gap-2 flex-wrap">
-                <button onClick={() => openEdit(cat)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>Edit</button>
-                {perms.canHide && (
-                  <button onClick={() => toggleHidden(cat)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: cat.is_hidden ? "#0ea5e922" : "#64748b22", color: cat.is_hidden ? "#38bdf8" : "#94a3b8" }}>
-                    {cat.is_hidden ? "Show" : "Hide"}
+        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+          {filtered.map((cat) => {
+            // Hidden takes priority in the badge. Clicking a Hidden badge
+            // un-hides it; clicking Active/Off toggles the active flag.
+            const hidden = !!cat.is_hidden;
+            const label  = hidden ? "Hidden" : cat.active ? "Active" : "Off";
+            const fg     = hidden ? "#38bdf8" : cat.active ? "#4ade80" : "#f87171";
+            const bg     = hidden ? "#0ea5e922" : cat.active ? "#16a34a22" : "#dc262622";
+            const bd     = hidden ? "#38bdf844" : cat.active ? "#4ade8044" : "#f8717144";
+            return (
+              <div key={cat.id} className="rounded-2xl p-5 flex flex-col gap-3" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="text-base font-bold truncate" style={{ color: "#e8d5a0" }}>{cat.name_en}</span>
+                    {cat.name_ar && <span className="text-sm truncate" style={{ color: "#e8d5a0", opacity: 0.55, direction: "rtl" }}>{cat.name_ar}</span>}
+                  </div>
+                  <button
+                    onClick={() => (hidden ? toggleHidden(cat) : toggleActive(cat))}
+                    title={hidden ? "Hidden from players — click to make visible" : cat.active ? "Active — click to turn off" : "Off — click to turn on"}
+                    className="px-2.5 py-1 rounded-full text-xs font-bold shrink-0"
+                    style={{ backgroundColor: bg, color: fg, border: `1px solid ${bd}` }}>
+                    {label}
                   </button>
-                )}
-                {perms.canRemove && (
-                  <button onClick={() => handleDelete(cat.id, cat.name_en)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#dc262622", color: "#f87171" }}>Del</button>
-                )}
+                </div>
+                <span className="text-xs px-2 py-1 rounded-full w-fit" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>
+                  {cat.question_count} question{cat.question_count === 1 ? "" : "s"}
+                </span>
+                <div className="flex items-center gap-2 flex-wrap mt-1">
+                  <button onClick={() => openEdit(cat)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>Edit</button>
+                  {perms.canHide && (
+                    <button onClick={() => toggleHidden(cat)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: cat.is_hidden ? "#0ea5e922" : "#64748b22", color: cat.is_hidden ? "#38bdf8" : "#94a3b8" }}>
+                      {cat.is_hidden ? "Show" : "Hide"}
+                    </button>
+                  )}
+                  {perms.canRemove && (
+                    <button onClick={() => handleDelete(cat.id, cat.name_en)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#dc262622", color: "#f87171" }}>Del</button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {filtered.length === 0 && !loading && (
-            <div className="px-5 py-10 text-center text-sm" style={{ color: "#e8d5a0", opacity: 0.4, backgroundColor: "#1e1530" }}>No categories found.</div>
+            <div className="px-5 py-10 text-center text-sm rounded-2xl" style={{ color: "#e8d5a0", opacity: 0.4, backgroundColor: "#1e1530", border: "1px solid #2e2050", gridColumn: "1 / -1" }}>No categories found.</div>
           )}
-        </div>
         </div>
       </div>
 
