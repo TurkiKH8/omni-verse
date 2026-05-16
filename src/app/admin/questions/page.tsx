@@ -5,7 +5,7 @@ import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Question } from "@/lib/supabase/types";
 
 // Fallback list used ONLY for the demo-mode mock data below. The real
-// admin form fetches the live categories from Supabase (see liveCategories
+// admin form fetches the live categories from Supabase (see catCards
 // state in QuestionsPage), so deleting/renaming categories in /admin/
 // categories is reflected here immediately.
 const CATEGORIES = ["Science","History","Geography","Sports","Movies & TV","Music","Technology","Literature","Art","Food & Drink","Nature","Politics"];
@@ -29,6 +29,9 @@ type FormState = {
   video_url: string | null;
   audio_url: string | null;
 };
+
+// One card on the "pick a category" screen.
+type CatCard = { id: string; name_en: string; name_ar: string; question_count: number };
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg"];
 const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
@@ -76,11 +79,11 @@ async function logAction(action: string, target: string, type: "create" | "updat
 
 export default function QuestionsPage() {
   const [questions, setQuestions] = useState<Question[]>(FALLBACK);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [filterCat, setFilterCat] = useState("All");
+  const [catSearch, setCatSearch] = useState("");
   const [showBulk, setShowBulk] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -94,29 +97,40 @@ export default function QuestionsPage() {
   const [audioError, setAudioError] = useState<string>("");
   const [perms, setPerms] = useState<RankPerms>({ canAdd: false, canRemove: false, canBulkAdd: false, canBulkRemove: false, canHide: false });
 
-  // Live category list pulled from the categories table. Source of truth
-  // for both the filter dropdown and the form. Falls back to the static
-  // CATEGORIES list only in demo mode (when Supabase isn't configured).
-  const [liveCategories, setLiveCategories] = useState<string[]>([]);
-  useEffect(() => {
-    if (!isSupabaseConfigured) { setLiveCategories(CATEGORIES); return; }
-    (async () => {
-      try {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 5000);
-        const { data } = await supabase
-          .from("categories")
-          .select("name_en")
-          .order("name_en")
-          .abortSignal(ctrl.signal);
-        clearTimeout(t);
-        const names = (data ?? [])
-          .map((c: { name_en: string }) => c.name_en)
-          .filter(Boolean);
-        setLiveCategories(names);
-      } catch { /* leave empty — user can refresh once categories exist */ }
-    })();
+  // Which category the user is currently looking inside. null = still on the
+  // category-picker screen (no questions loaded yet → fast page load).
+  const [selectedCat, setSelectedCat] = useState<{ id: string; name: string } | null>(null);
+
+  // Lightweight category cards (id + names + question count). This is the
+  // ONLY thing fetched up front — never the whole question pool — so the
+  // page stays fast even with thousands of questions.
+  const [catCards, setCatCards] = useState<CatCard[]>([]);
+  const [catsLoading, setCatsLoading] = useState(true);
+
+  const fetchCatCards = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setCatCards(CATEGORIES.map((n, i) => ({ id: `demo-${i}`, name_en: n, name_ar: "", question_count: 0 })));
+      setCatsLoading(false);
+      return;
+    }
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 5000);
+      const { data } = await supabase
+        .from("categories")
+        .select("id, name_en, name_ar, question_count")
+        .order("name_en")
+        .abortSignal(ctrl.signal);
+      clearTimeout(t);
+      if (data) setCatCards(data as CatCard[]);
+    } catch { /* leave whatever we had */ }
+    finally { setCatsLoading(false); }
   }, []);
+
+  useEffect(() => { fetchCatCards(); }, [fetchCatCards]);
+
+  // Names list used by the Add / Edit form dropdown (derived, no extra fetch).
+  const liveCategories = catCards.map((c) => c.name_en).filter(Boolean);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -171,19 +185,22 @@ export default function QuestionsPage() {
     })();
   }, []);
 
+  // Loads ONLY the selected category's questions. Nothing is fetched while
+  // we're still on the picker screen.
   const fetchQuestions = useCallback(async () => {
     if (!isSupabaseConfigured) { setLoading(false); return; }
+    if (!selectedCat) { setQuestions([]); setLoading(false); return; }
+    setLoading(true);
     try {
       const { data } = await supabase
         .from("questions")
         .select("*, categories(name_en, name_ar)")
+        .eq("category_id", selectedCat.id)
         .order("created_at", { ascending: true });
-      // Empty result must replace the list — the DB is the source of truth,
-      // including when it has zero questions.
       if (data) setQuestions(data as Question[]);
     } catch { /* keep current questions */ }
     finally { setLoading(false); }
-  }, []);
+  }, [selectedCat]);
 
   useEffect(() => { fetchQuestions(); }, [fetchQuestions]);
 
@@ -207,23 +224,40 @@ export default function QuestionsPage() {
     return ci.data?.id ?? null;
   };
 
+  // Questions are already scoped to one category by the DB query, so here we
+  // only narrow further by the search box.
   const filtered = questions.filter((q) => {
-    const catName = q.categories?.name_en ?? "";
     const s = search.toLowerCase();
-    const matchSearch =
+    if (!s) return true;
+    return (
       q.question_en.toLowerCase().includes(s) ||
       q.answer_en.toLowerCase().includes(s) ||
       (q.question_ar ?? "").toLowerCase().includes(s) ||
-      (q.answer_ar ?? "").toLowerCase().includes(s) ||
-      catName.toLowerCase().includes(s);
-    const matchCat = filterCat === "All" || catName === filterCat;
-    return matchSearch && matchCat;
+      (q.answer_ar ?? "").toLowerCase().includes(s)
+    );
   });
+
+  // Category cards filtered by the picker-screen search box.
+  const filteredCats = catCards.filter((c) => {
+    const s = catSearch.toLowerCase();
+    if (!s) return true;
+    return c.name_en.toLowerCase().includes(s) || (c.name_ar ?? "").includes(catSearch);
+  });
+
+  const openCategory = (c: CatCard) => {
+    setSelectedCat({ id: c.id, name: c.name_en });
+    setSearch("");
+  };
+  const backToCategories = () => {
+    setSelectedCat(null);
+    setSearch("");
+    fetchCatCards(); // refresh the counts on the way out
+  };
 
   const openAdd = () => {
     setEditId(null);
     setSaveError("");
-    setForm({ category: liveCategories[0] ?? "", points: 100, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
+    setForm({ category: selectedCat?.name ?? liveCategories[0] ?? "", points: 100, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
     setImageFile(null);  setImageError("");
     setVideoFile(null);  setVideoError("");
     setAudioFile(null);  setAudioError("");
@@ -233,7 +267,7 @@ export default function QuestionsPage() {
     setEditId(q.id);
     setSaveError("");
     setForm({
-      category: q.categories?.name_en ?? liveCategories[0] ?? "",
+      category: q.categories?.name_en ?? selectedCat?.name ?? liveCategories[0] ?? "",
       points: q.points,
       question_en: q.question_en, answer_en: q.answer_en,
       question_ar: q.question_ar, answer_ar: q.answer_ar,
@@ -312,6 +346,7 @@ export default function QuestionsPage() {
 
       await logAction(editId ? "Updated question" : "Created question", `${form.category} / ${form.points}pts`, editId ? "update" : "create");
       await fetchQuestions();
+      await fetchCatCards();
     } else {
       if (editId) {
         setQuestions((p) => p.map((q) => q.id === editId ? { ...q, points: form.points, question_en: form.question_en, answer_en: form.answer_en, image_url: finalImageUrl, video_url: finalVideoUrl, audio_url: finalAudioUrl, categories: { name_en: form.category, name_ar: "" } } : q));
@@ -328,6 +363,7 @@ export default function QuestionsPage() {
       await supabase.from("questions").delete().eq("id", q.id);
       await logAction("Deleted question", `${q.categories?.name_en} / ${q.points}pts`, "delete");
       await fetchQuestions();
+      await fetchCatCards();
     } else {
       setQuestions((p) => p.filter((x) => x.id !== q.id));
     }
@@ -347,6 +383,7 @@ export default function QuestionsPage() {
       }
       await logAction("Bulk uploaded questions", `${lines.length} questions`, "create");
       await fetchQuestions();
+      await fetchCatCards();
     } else {
       const newQs = lines.map((line) => {
         const p = line.split("|").map((s) => s.trim());
@@ -367,7 +404,9 @@ export default function QuestionsPage() {
           <div>
             <h1 className="text-2xl font-extrabold" style={{ color: "#e8d5a0" }}>Questions</h1>
             <p className="text-sm mt-1" style={{ color: "#e8d5a0", opacity: 0.5 }}>
-              {loading ? "Loading…" : `${questions.length} total questions`}
+              {selectedCat
+                ? (loading ? "Loading…" : `${selectedCat.name} · ${questions.length} question${questions.length === 1 ? "" : "s"}`)
+                : (catsLoading ? "Loading…" : `Pick a category to manage its questions · ${catCards.length} categories`)}
               {!isSupabaseConfigured && <span style={{ color: "#f87171" }}> · demo mode</span>}
             </p>
           </div>
@@ -375,61 +414,96 @@ export default function QuestionsPage() {
             {perms.canBulkAdd && (
               <button onClick={() => setShowBulk(true)} className="px-4 py-2.5 rounded-full text-sm font-bold" style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", color: "#a78bfa" }}>Bulk Upload</button>
             )}
-            {perms.canAdd && (
+            {selectedCat && perms.canAdd && (
               <button onClick={openAdd} className="px-5 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>+ Add Question</button>
             )}
           </div>
         </div>
 
-        <div className="flex gap-3 flex-wrap">
-          <input type="text" placeholder="Search questions..." value={search} onChange={(e) => setSearch(e.target.value)} className="flex-1 min-w-48 px-4 py-2.5 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
-          <select value={filterCat} onChange={(e) => setFilterCat(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }}>
-            <option value="All">All Categories</option>
-            {liveCategories.map((c) => <option key={c}>{c}</option>)}
-          </select>
-        </div>
+        {/* ─────────── SCREEN 1: pick a category ─────────── */}
+        {!selectedCat && (
+          <>
+            <input type="text" placeholder="Search categories..." value={catSearch} onChange={(e) => setCatSearch(e.target.value)} className="w-full px-4 py-2.5 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
 
-        <div className="overflow-x-auto">
-        <div className="rounded-2xl overflow-hidden min-w-[620px]" style={{ border: "1px solid #2e2050" }}>
-          <div className="grid px-5 py-3 text-xs font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "52px 116px 64px 1fr 150px 88px", backgroundColor: "#0d091a", color: "#e8d5a0", opacity: 0.5 }}>
-            <span>#</span><span>Category</span><span>Points</span><span>Question</span><span>Answer</span><span className="text-center">Actions</span>
-          </div>
-          {filtered.map((q, i) => (
-            <div key={q.id} className="grid px-5 py-4 items-start gap-2" style={{ gridTemplateColumns: "52px 116px 64px 1fr 150px 88px", borderTop: i === 0 ? "none" : "1px solid #2e2050", backgroundColor: i % 2 === 0 ? "#1e1530" : "#1a1228" }}>
-              <span className="text-sm font-mono" style={{ color: "#e8d5a0", opacity: 0.4 }}>{q.q_index ?? "—"}</span>
-              <span className="text-xs px-2 py-1 rounded-full w-fit" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>{q.categories?.name_en ?? "—"}</span>
-              <span className="text-sm font-bold" style={{ color: "#d4860a" }}>{q.points}</span>
-              <p className="text-sm leading-snug" style={{ color: "#e8d5a0" }}>{q.question_en}</p>
-              <p className="text-xs leading-snug" style={{ color: "#e8d5a0", opacity: 0.65 }}>{q.answer_en}</p>
-              <div className="flex items-center gap-1.5 justify-center flex-wrap">
-                <button onClick={() => openEdit(q)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>Edit</button>
-                {perms.canHide && (
-                  <button
-                    onClick={async () => {
-                      const hidden = !(q as Question & { is_hidden?: boolean }).is_hidden;
-                      if (isSupabaseConfigured) {
-                        await supabase.from("questions").update({ is_hidden: hidden }).eq("id", q.id);
-                        await logAction("Toggled hidden question", `${q.categories?.name_en} / ${q.points}pts → ${hidden ? "HIDDEN" : "VISIBLE"}`, "update");
-                        await fetchQuestions();
-                      }
-                    }}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium"
-                    style={{ backgroundColor: (q as Question & { is_hidden?: boolean }).is_hidden ? "#0ea5e922" : "#64748b22", color: (q as Question & { is_hidden?: boolean }).is_hidden ? "#38bdf8" : "#94a3b8" }}
-                  >
-                    {(q as Question & { is_hidden?: boolean }).is_hidden ? "Show" : "Hide"}
-                  </button>
-                )}
-                {perms.canRemove && (
-                  <button onClick={() => handleDelete(q)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#dc262622", color: "#f87171" }}>Del</button>
-                )}
-              </div>
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+              {filteredCats.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => openCategory(c)}
+                  className="text-left rounded-2xl p-5 flex flex-col gap-2 hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}
+                >
+                  <span className="text-base font-bold" style={{ color: "#e8d5a0" }}>{c.name_en}</span>
+                  {c.name_ar && <span className="text-sm" style={{ color: "#e8d5a0", opacity: 0.55, direction: "rtl" }}>{c.name_ar}</span>}
+                  <span className="text-xs px-2 py-1 rounded-full w-fit mt-1" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>
+                    {c.question_count} question{c.question_count === 1 ? "" : "s"}
+                  </span>
+                </button>
+              ))}
+              {filteredCats.length === 0 && !catsLoading && (
+                <div className="px-5 py-10 text-center text-sm rounded-2xl" style={{ color: "#e8d5a0", opacity: 0.4, backgroundColor: "#1e1530", border: "1px solid #2e2050", gridColumn: "1 / -1" }}>
+                  No categories found. Create one in the Categories page first.
+                </div>
+              )}
             </div>
-          ))}
-          {filtered.length === 0 && !loading && (
-            <div className="px-5 py-10 text-center text-sm" style={{ color: "#e8d5a0", opacity: 0.4, backgroundColor: "#1e1530" }}>No questions found.</div>
-          )}
-        </div>
-        </div>
+          </>
+        )}
+
+        {/* ─────────── SCREEN 2: questions inside the chosen category ─────────── */}
+        {selectedCat && (
+          <>
+            <div className="flex gap-3 flex-wrap items-center">
+              <button onClick={backToCategories} className="px-4 py-2.5 rounded-full text-sm font-bold" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }}>
+                ← All categories
+              </button>
+              <input type="text" placeholder={`Search in ${selectedCat.name}...`} value={search} onChange={(e) => setSearch(e.target.value)} className="flex-1 min-w-48 px-4 py-2.5 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+            </div>
+
+            <div className="overflow-x-auto">
+            <div className="rounded-2xl overflow-hidden min-w-[620px]" style={{ border: "1px solid #2e2050" }}>
+              <div className="grid px-5 py-3 text-xs font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "52px 116px 64px 1fr 150px 88px", backgroundColor: "#0d091a", color: "#e8d5a0", opacity: 0.5 }}>
+                <span>#</span><span>Category</span><span>Points</span><span>Question</span><span>Answer</span><span className="text-center">Actions</span>
+              </div>
+              {filtered.map((q, i) => (
+                <div key={q.id} className="grid px-5 py-4 items-start gap-2" style={{ gridTemplateColumns: "52px 116px 64px 1fr 150px 88px", borderTop: i === 0 ? "none" : "1px solid #2e2050", backgroundColor: i % 2 === 0 ? "#1e1530" : "#1a1228" }}>
+                  <span className="text-sm font-mono" style={{ color: "#e8d5a0", opacity: 0.4 }}>{q.q_index ?? "—"}</span>
+                  <span className="text-xs px-2 py-1 rounded-full w-fit" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>{q.categories?.name_en ?? "—"}</span>
+                  <span className="text-sm font-bold" style={{ color: "#d4860a" }}>{q.points}</span>
+                  <p className="text-sm leading-snug" style={{ color: "#e8d5a0" }}>{q.question_en}</p>
+                  <p className="text-xs leading-snug" style={{ color: "#e8d5a0", opacity: 0.65 }}>{q.answer_en}</p>
+                  <div className="flex items-center gap-1.5 justify-center flex-wrap">
+                    <button onClick={() => openEdit(q)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>Edit</button>
+                    {perms.canHide && (
+                      <button
+                        onClick={async () => {
+                          const hidden = !(q as Question & { is_hidden?: boolean }).is_hidden;
+                          if (isSupabaseConfigured) {
+                            await supabase.from("questions").update({ is_hidden: hidden }).eq("id", q.id);
+                            await logAction("Toggled hidden question", `${q.categories?.name_en} / ${q.points}pts → ${hidden ? "HIDDEN" : "VISIBLE"}`, "update");
+                            await fetchQuestions();
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium"
+                        style={{ backgroundColor: (q as Question & { is_hidden?: boolean }).is_hidden ? "#0ea5e922" : "#64748b22", color: (q as Question & { is_hidden?: boolean }).is_hidden ? "#38bdf8" : "#94a3b8" }}
+                      >
+                        {(q as Question & { is_hidden?: boolean }).is_hidden ? "Show" : "Hide"}
+                      </button>
+                    )}
+                    {perms.canRemove && (
+                      <button onClick={() => handleDelete(q)} className="px-2.5 py-1 rounded-lg text-xs font-medium" style={{ backgroundColor: "#dc262622", color: "#f87171" }}>Del</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {filtered.length === 0 && !loading && (
+                <div className="px-5 py-10 text-center text-sm" style={{ color: "#e8d5a0", opacity: 0.4, backgroundColor: "#1e1530" }}>
+                  {search ? "No questions match your search." : `No questions in ${selectedCat.name} yet. Click “+ Add Question”.`}
+                </div>
+              )}
+            </div>
+            </div>
+          </>
+        )}
       </div>
 
       {showForm && (
