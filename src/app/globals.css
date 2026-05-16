@@ -50,61 +50,60 @@ body {
   animation: attention-pulse-red 1.5s ease-out infinite;
 }
 
-/* ── Front-end galaxy backdrop ──────────────────────────────────────────────
-   Decorative only. Fixed layer that sits behind every customer page (those
-   wrappers are transparent so this shows through). Motion is deliberately
-   tiny and very slow so it reads as "premium", never distracting. */
+/* ── Front-end galaxy backdrop (pure code, no image) ────────────────────────
+   Decorative only. A fixed layer behind every customer page + the arena.
+   The whole galaxy slowly fades in and out; each star/planet drifts and
+   swings on its own slow, randomised path so it never looks synced. */
 .galaxy-backdrop {
   position: fixed;
   inset: 0;
-  z-index: -10;          /* above the body base colour, behind page content */
+  z-index: -10;            /* above the body base colour, behind page content */
   pointer-events: none;
   overflow: hidden;
+  /* Faint deep-space nebula tint in brand colours. */
+  background:
+    radial-gradient(circle at 80% 18%, rgba(212, 134, 10, 0.10), transparent 45%),
+    radial-gradient(circle at 15% 75%, rgba(124, 58, 237, 0.12), transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(46, 32, 80, 0.18), transparent 70%);
 }
-.galaxy-arc {
+/* This wrapper does the slow whole-galaxy fade in / out. */
+.galaxy-fade {
   position: absolute;
   inset: 0;
-  background-image: url("/galaxy-arc.png");
-  background-repeat: no-repeat;
-  background-position: right center;
-  background-size: auto 116%;
-  opacity: 0.5;
-  will-change: transform, opacity;
-  animation: galaxy-drift 46s ease-in-out infinite alternate,
-             galaxy-breathe 15s ease-in-out infinite;
+  animation: galaxy-fade 22s ease-in-out infinite;
+  will-change: opacity;
 }
-@media (max-width: 768px) {
-  /* Quieter on phones so it never crowds the content */
-  .galaxy-arc {
-    opacity: 0.26;
-    background-size: auto 100%;
-    background-position: right top;
-  }
+@keyframes galaxy-fade {
+  0%, 100% { opacity: 0.40; }
+  50%      { opacity: 0.85; }
 }
-@keyframes galaxy-drift {
-  from { transform: translate3d(0, 0, 0) scale(1); }
-  to   { transform: translate3d(-12px, 9px, 0) scale(1.04); }
-}
-@keyframes galaxy-breathe {
-  0%, 100% { opacity: 0.42; }
-  50%      { opacity: 0.58; }
-}
-.galaxy-twinkle span {
+.galaxy-star {
   position: absolute;
-  width: 3px;
-  height: 3px;
   border-radius: 9999px;
-  background: #ffd98a;
-  box-shadow: 0 0 6px 1px rgba(255, 217, 138, 0.75);
-  opacity: 0;
-  animation: galaxy-twinkle 6.5s ease-in-out infinite;
+  box-shadow: 0 0 6px 1px rgba(255, 230, 170, 0.55);
+  will-change: transform, opacity;
+}
+.galaxy-planet {
+  position: absolute;
+  border-radius: 9999px;
+  transform: translate3d(-50%, -50%, 0);
+  filter: blur(2px);
+  will-change: transform;
 }
 @keyframes galaxy-twinkle {
-  0%, 100% { opacity: 0; transform: scale(0.5); }
-  48%, 56% { opacity: 0.85; transform: scale(1); }
+  0%, 100% { opacity: 0.15; }
+  50%      { opacity: 0.95; }
 }
-/* Respect visitors who ask their device to reduce motion: keep it still. */
+/* Four gentle "swing" paths so drift looks random across elements. */
+@keyframes gd1 { from { transform: translate3d(0,0,0); }      to { transform: translate3d(18px,-22px,0); } }
+@keyframes gd2 { from { transform: translate3d(0,0,0); }      to { transform: translate3d(-24px,16px,0); } }
+@keyframes gd3 { from { transform: translate3d(0,0,0); }      to { transform: translate3d(14px,26px,0); } }
+@keyframes gd4 { from { transform: translate3d(0,0,0); }      to { transform: translate3d(-16px,-18px,0); } }
+@keyframes gp1 { from { transform: translate3d(-50%,-50%,0) scale(1); }    to { transform: translate3d(calc(-50% + 30px),calc(-50% - 24px),0) scale(1.06); } }
+@keyframes gp2 { from { transform: translate3d(-50%,-50%,0) scale(1); }    to { transform: translate3d(calc(-50% - 36px),calc(-50% + 28px),0) scale(1.04); } }
+@keyframes gp3 { from { transform: translate3d(-50%,-50%,0) scale(1); }    to { transform: translate3d(calc(-50% + 22px),calc(-50% + 30px),0) scale(1.05); } }
+/* Respect visitors who ask their device to reduce motion: hold it still. */
 @media (prefers-reduced-motion: reduce) {
-  .galaxy-arc { animation: none; }
-  .galaxy-twinkle span { animation: none; opacity: 0; }
+  .galaxy-fade { animation: none; opacity: 0.6; }
+  .galaxy-star, .galaxy-planet { animation: none !important; }
 }
