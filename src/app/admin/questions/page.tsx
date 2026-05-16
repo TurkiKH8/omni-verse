@@ -13,11 +13,9 @@ const CATEGORIES = ["Science","History","Geography","Sports","Movies & TV","Musi
 // Game logic: 24 point tiers from 100 to 2400 in steps of 100.
 const POINTS = Array.from({ length: 24 }, (_, i) => (i + 1) * 100);
 
-const FALLBACK: Question[] = [
-  { id: "1", category_id: "", points: 200, question_en: "What is the chemical symbol for water?", answer_en: "H₂O", question_ar: "", answer_ar: "", created_at: "", categories: { name_en: "Science", name_ar: "العلوم" } },
-  { id: "2", category_id: "", points: 400, question_en: "Which planet is known as the Red Planet?", answer_en: "Mars", question_ar: "", answer_ar: "", created_at: "", categories: { name_en: "Science", name_ar: "العلوم" } },
-  { id: "3", category_id: "", points: 200, question_en: "In what year did World War II end?", answer_en: "1945", question_ar: "", answer_ar: "", created_at: "", categories: { name_en: "History", name_ar: "التاريخ" } },
-];
+// No hardcoded questions — the list is whatever Supabase returns (including
+// none). Demo mode without Supabase simply shows an empty list.
+const FALLBACK: Question[] = [];
 
 type FormState = {
   category: string;
@@ -86,6 +84,7 @@ export default function QuestionsPage() {
   const [showBulk, setShowBulk] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [form, setForm] = useState<FormState>({ category: "", points: 100, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string>("");
@@ -179,7 +178,9 @@ export default function QuestionsPage() {
         .from("questions")
         .select("*, categories(name_en, name_ar)")
         .order("created_at", { ascending: true });
-      if (data && data.length > 0) setQuestions(data as Question[]);
+      // Empty result must replace the list — the DB is the source of truth,
+      // including when it has zero questions.
+      if (data) setQuestions(data as Question[]);
     } catch { /* keep current questions */ }
     finally { setLoading(false); }
   }, []);
@@ -187,19 +188,41 @@ export default function QuestionsPage() {
   useEffect(() => { fetchQuestions(); }, [fetchQuestions]);
 
   const getCategoryId = async (name: string) => {
-    const { data } = await supabase.from("categories").select("id").eq("name_en", name).single();
-    return data?.id ?? null;
+    // 1) exact match first (maybeSingle never throws on 0/2 rows, unlike single)
+    const exact = await supabase
+      .from("categories")
+      .select("id")
+      .eq("name_en", name)
+      .limit(1)
+      .maybeSingle();
+    if (exact.data?.id) return exact.data.id;
+    // 2) forgiving fallback: trim spaces + ignore upper/lower case so a tiny
+    //    mismatch (e.g. "minecraft " vs "Minecraft") doesn't silently fail.
+    const ci = await supabase
+      .from("categories")
+      .select("id")
+      .ilike("name_en", name.trim())
+      .limit(1)
+      .maybeSingle();
+    return ci.data?.id ?? null;
   };
 
   const filtered = questions.filter((q) => {
     const catName = q.categories?.name_en ?? "";
-    const matchSearch = q.question_en.toLowerCase().includes(search.toLowerCase()) || q.answer_en.toLowerCase().includes(search.toLowerCase());
+    const s = search.toLowerCase();
+    const matchSearch =
+      q.question_en.toLowerCase().includes(s) ||
+      q.answer_en.toLowerCase().includes(s) ||
+      (q.question_ar ?? "").toLowerCase().includes(s) ||
+      (q.answer_ar ?? "").toLowerCase().includes(s) ||
+      catName.toLowerCase().includes(s);
     const matchCat = filterCat === "All" || catName === filterCat;
     return matchSearch && matchCat;
   });
 
   const openAdd = () => {
     setEditId(null);
+    setSaveError("");
     setForm({ category: liveCategories[0] ?? "", points: 100, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
     setImageFile(null);  setImageError("");
     setVideoFile(null);  setVideoError("");
@@ -208,6 +231,7 @@ export default function QuestionsPage() {
   };
   const openEdit = (q: Question) => {
     setEditId(q.id);
+    setSaveError("");
     setForm({
       category: q.categories?.name_en ?? liveCategories[0] ?? "",
       points: q.points,
@@ -227,7 +251,7 @@ export default function QuestionsPage() {
   const handleSave = async () => {
     if (!form.question_en.trim() || !form.answer_en.trim() || !form.question_ar.trim() || !form.answer_ar.trim()) return;
     setSaving(true);
-    setImageError(""); setVideoError(""); setAudioError("");
+    setImageError(""); setVideoError(""); setAudioError(""); setSaveError("");
 
     // Upload any new media file first. If an upload fails, keep saving the
     // rest of the question — media is optional. The bucket may not exist
@@ -254,7 +278,11 @@ export default function QuestionsPage() {
 
     if (isSupabaseConfigured) {
       const catId = await getCategoryId(form.category);
-      if (!catId) { setSaving(false); return; }
+      if (!catId) {
+        setSaveError(`Category "${form.category}" was not found in the database. Open the Categories page, make sure that exact category exists, then try again. Nothing was saved.`);
+        setSaving(false);
+        return;
+      }
 
       // Try with all media fields; fall back step by step if the column
       // doesn't exist (so the form keeps working on a partially-migrated DB).
@@ -273,7 +301,14 @@ export default function QuestionsPage() {
       };
       let result = await trySave(fullPayload);
       if (result.error) result = await trySave(imageOnly);
-      if (result.error) await trySave(basicPayload);
+      if (result.error) result = await trySave(basicPayload);
+      if (result.error) {
+        // All save attempts failed — DO NOT pretend it worked. Show staff the
+        // real reason and keep the form open so their typing isn't lost.
+        setSaveError(`Could not save the question: ${result.error.message ?? "unknown database error"}. Nothing was added — please check and try again.`);
+        setSaving(false);
+        return;
+      }
 
       await logAction(editId ? "Updated question" : "Created question", `${form.category} / ${form.points}pts`, editId ? "update" : "create");
       await fetchQuestions();
@@ -355,12 +390,13 @@ export default function QuestionsPage() {
         </div>
 
         <div className="overflow-x-auto">
-        <div className="rounded-2xl overflow-hidden min-w-[560px]" style={{ border: "1px solid #2e2050" }}>
-          <div className="grid px-5 py-3 text-xs font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "120px 70px 1fr 160px 90px", backgroundColor: "#0d091a", color: "#e8d5a0", opacity: 0.5 }}>
-            <span>Category</span><span>Points</span><span>Question</span><span>Answer</span><span className="text-center">Actions</span>
+        <div className="rounded-2xl overflow-hidden min-w-[620px]" style={{ border: "1px solid #2e2050" }}>
+          <div className="grid px-5 py-3 text-xs font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "52px 116px 64px 1fr 150px 88px", backgroundColor: "#0d091a", color: "#e8d5a0", opacity: 0.5 }}>
+            <span>#</span><span>Category</span><span>Points</span><span>Question</span><span>Answer</span><span className="text-center">Actions</span>
           </div>
           {filtered.map((q, i) => (
-            <div key={q.id} className="grid px-5 py-4 items-start gap-2" style={{ gridTemplateColumns: "120px 70px 1fr 160px 90px", borderTop: i === 0 ? "none" : "1px solid #2e2050", backgroundColor: i % 2 === 0 ? "#1e1530" : "#1a1228" }}>
+            <div key={q.id} className="grid px-5 py-4 items-start gap-2" style={{ gridTemplateColumns: "52px 116px 64px 1fr 150px 88px", borderTop: i === 0 ? "none" : "1px solid #2e2050", backgroundColor: i % 2 === 0 ? "#1e1530" : "#1a1228" }}>
+              <span className="text-sm font-mono" style={{ color: "#e8d5a0", opacity: 0.4 }}>{q.q_index ?? "—"}</span>
               <span className="text-xs px-2 py-1 rounded-full w-fit" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa" }}>{q.categories?.name_en ?? "—"}</span>
               <span className="text-sm font-bold" style={{ color: "#d4860a" }}>{q.points}</span>
               <p className="text-sm leading-snug" style={{ color: "#e8d5a0" }}>{q.question_en}</p>
@@ -538,6 +574,10 @@ export default function QuestionsPage() {
                 <p className="text-xs" style={{ color: "#f87171" }}>{audioError}</p>
               )}
             </div>
+
+            {saveError && (
+              <p className="text-sm rounded-xl px-4 py-3" style={{ color: "#fca5a5", backgroundColor: "#dc262622", border: "1px solid #dc262655" }}>{saveError}</p>
+            )}
 
             <div className="flex gap-3 mt-2">
               <button onClick={() => setShowForm(false)} className="flex-1 py-2.5 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>Cancel</button>
