@@ -37,3 +37,15 @@ body {
 .history-flash {
   animation: history-flash 0.9s ease-in-out 2;
 }
+
+/* Gentle infinite "radar ping" pulse for the red low-questions "!" badge
+   on category tiles. Keeps pulsing while the picker is open so it draws
+   the eye, but stays soft. */
+@keyframes attention-pulse-red {
+  0%   { box-shadow: 0 0 0 0   rgba(220, 38, 38, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+  100% { box-shadow: 0 0 0 0   rgba(220, 38, 38, 0); }
+}
+.attention-pulse-red {
+  animation: attention-pulse-red 1.5s ease-out infinite;
+}
