@@ -56,10 +56,17 @@ export default function CategoriesPage() {
   const [formSampleImageUrl, setFormSampleImageUrl] = useState<string | null>(null);
   const [sampleImageFile, setSampleImageFile] = useState<File | null>(null);
   const [sampleImageError, setSampleImageError] = useState<string>("");
-  // Optional sorting-group label (becomes a filter chip on the player page).
+  // Optional sorting group — chosen from the central list (dropdown). The
+  // picked name is copied onto the category so the player page is unchanged.
   const [formSortEn, setFormSortEn] = useState("");
   const [formSortAr, setFormSortAr] = useState("");
-  const [showSort, setShowSort] = useState(false);
+  // Central sort list + its management modal ("Add a Sort").
+  const [sorts, setSorts] = useState<{ id: string; name_en: string; name_ar: string }[]>([]);
+  const [showSortMgr, setShowSortMgr] = useState(false);
+  const [newSortEn, setNewSortEn] = useState("");
+  const [newSortAr, setNewSortAr] = useState("");
+  const [sortMgrError, setSortMgrError] = useState("");
+  const [savingSort, setSavingSort] = useState(false);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [mutError, setMutError] = useState("");
@@ -112,6 +119,48 @@ export default function CategoriesPage() {
 
   useEffect(() => { fetchCategories(); }, [fetchCategories]);
 
+  const fetchSorts = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const { data } = await supabase
+      .from("category_sorts")
+      .select("id,name_en,name_ar")
+      .order("name_en");
+    // Missing table (migration not run) → data is null; keep list empty.
+    if (data) setSorts(data as { id: string; name_en: string; name_ar: string }[]);
+  }, []);
+
+  useEffect(() => { fetchSorts(); }, [fetchSorts]);
+
+  const addSort = async () => {
+    setSortMgrError("");
+    const en = newSortEn.trim();
+    const ar = newSortAr.trim();
+    if (!en || !ar) { setSortMgrError("Both English and Arabic names are required."); return; }
+    if (sorts.some((s) => s.name_en.toLowerCase() === en.toLowerCase())) {
+      setSortMgrError(`"${en}" already exists.`); return;
+    }
+    setSavingSort(true);
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from("category_sorts").insert({ name_en: en, name_ar: ar });
+      if (error) { setSortMgrError(`Could not add: ${error.message ?? "unknown error"}.`); setSavingSort(false); return; }
+      await fetchSorts();
+    } else {
+      setSorts((p) => [...p, { id: String(Date.now()), name_en: en, name_ar: ar }]);
+    }
+    setNewSortEn(""); setNewSortAr(""); setSavingSort(false);
+  };
+
+  const deleteSort = async (s: { id: string; name_en: string }) => {
+    setSortMgrError("");
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from("category_sorts").delete().eq("id", s.id);
+      if (error) { setSortMgrError(`Could not remove "${s.name_en}": ${error.message ?? "unknown error"}.`); return; }
+      await fetchSorts();
+    } else {
+      setSorts((p) => p.filter((x) => x.id !== s.id));
+    }
+  };
+
   const filtered = categories.filter(
     (c) => c.name_en.toLowerCase().includes(search.toLowerCase()) || c.name_ar.includes(search)
   );
@@ -121,7 +170,7 @@ export default function CategoriesPage() {
     setFormSampleQEn(""); setFormSampleAEn("");
     setFormSampleQAr(""); setFormSampleAAr("");
     setFormSampleImageUrl(null); setSampleImageFile(null); setSampleImageError("");
-    setFormSortEn(""); setFormSortAr(""); setShowSort(false);
+    setFormSortEn(""); setFormSortAr("");
   };
 
   const openAdd = () => {
@@ -137,20 +186,18 @@ export default function CategoriesPage() {
     setFormSampleQAr(cat.sample_question_ar ?? ""); setFormSampleAAr(cat.sample_answer_ar ?? "");
     setFormSampleImageUrl(cat.sample_image_url ?? null); setSampleImageFile(null); setSampleImageError("");
     setFormSortEn(cat.sort_label_en ?? ""); setFormSortAr(cat.sort_label_ar ?? "");
-    setShowSort(!!(cat.sort_label_en || cat.sort_label_ar));
     setFormImageUrl(cat.image_url ?? null); setImageFile(null); setImageError("");
     setShowForm(true);
   };
 
   // Every field is required — name, Arabic name, description (both langs),
   // and a sample question + answer in both langs. The sorting group is
-  // optional, but if its panel is opened BOTH languages must be filled.
+  // optional (picked from the dropdown), so it's not gated here.
   const requiredFieldsFilled = () =>
     !!formName.trim() && !!formNameAr.trim() &&
     !!formDescEn.trim() && !!formDescAr.trim() &&
     !!formSampleQEn.trim() && !!formSampleAEn.trim() &&
-    !!formSampleQAr.trim() && !!formSampleAAr.trim() &&
-    (!showSort || (!!formSortEn.trim() && !!formSortAr.trim()));
+    !!formSampleQAr.trim() && !!formSampleAAr.trim();
 
   const handleSave = async () => {
     if (!requiredFieldsFilled()) return;
@@ -284,9 +331,16 @@ export default function CategoriesPage() {
             </p>
           </div>
           {perms.canAdd && (
-            <button onClick={openAdd} className="px-5 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
-              + Add Category
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={() => { setSortMgrError(""); setNewSortEn(""); setNewSortAr(""); setShowSortMgr(true); }}
+                className="px-4 py-2.5 rounded-full text-sm font-bold hover:opacity-90"
+                style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed66" }}>
+                ⇅ Add a Sort
+              </button>
+              <button onClick={openAdd} className="px-5 py-2.5 rounded-full text-sm font-bold hover:opacity-90" style={{ backgroundColor: "#d4860a", color: "#120d1f" }}>
+                + Add Category
+              </button>
+            </div>
           )}
         </div>
 
@@ -428,33 +482,35 @@ export default function CategoriesPage() {
               </div>
             </div>
 
-            {/* ── Sorting group (optional) ────────────────────────────── */}
-            <div className="flex flex-col gap-2">
-              {!showSort ? (
-                <button type="button" onClick={() => setShowSort(true)}
-                  className="w-full py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-                  style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1.5px dashed #7c3aed" }}>
-                  <span className="text-lg leading-none">⇅</span> Add Sorting Group Button
-                  <span className="font-normal opacity-60">(optional)</span>
-                </button>
-              ) : (
-                <div className="rounded-xl p-4 flex flex-col gap-3" style={{ backgroundColor: "#120d1f", border: "1px dashed #2e2050" }}>
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>Sorting group (filter chip on the player page)</p>
-                    <button type="button" onClick={() => { setShowSort(false); setFormSortEn(""); setFormSortAr(""); }}
-                      className="text-xs font-medium" style={{ color: "#f87171" }}>Remove</button>
-                  </div>
-                  <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.5 }}>Categories sharing the same label become one chip. Both languages required.</p>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sorting Label (English) <span style={{ color: "#f87171" }}>*</span></label>
-                    <input type="text" value={formSortEn} onChange={(e) => setFormSortEn(e.target.value)} placeholder="e.g. Entertainment" className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sorting Label (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
-                    <input type="text" value={formSortAr} onChange={(e) => setFormSortAr(e.target.value)} placeholder="مثال: ترفيه" dir="rtl" className="w-full px-4 py-3 rounded-xl text-sm outline-none text-right" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
-                  </div>
-                </div>
-              )}
+            {/* ── Sorting group (optional, picked from the central list) ── */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>
+                Sorting Group <span style={{ opacity: 0.4 }}>optional</span>
+              </label>
+              <select
+                value={formSortEn}
+                onChange={(e) => {
+                  const picked = sorts.find((s) => s.name_en === e.target.value);
+                  if (picked) { setFormSortEn(picked.name_en); setFormSortAr(picked.name_ar); }
+                  else { setFormSortEn(""); setFormSortAr(""); }
+                }}
+                className="w-full px-4 py-3 rounded-xl text-sm outline-none"
+                style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }}
+              >
+                <option value="">— None —</option>
+                {/* Keep a legacy/free-text value selectable so it isn't lost. */}
+                {formSortEn && !sorts.some((s) => s.name_en === formSortEn) && (
+                  <option value={formSortEn}>{formSortEn} (existing)</option>
+                )}
+                {sorts.map((s) => (
+                  <option key={s.id} value={s.name_en}>{s.name_en} — {s.name_ar}</option>
+                ))}
+              </select>
+              <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.5 }}>
+                {sorts.length === 0
+                  ? "No sorts yet — use the “⇅ Add a Sort” button at the top of the Categories page to create one."
+                  : "Pick a group so this category appears under that filter chip on the player page."}
+              </p>
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -499,6 +555,48 @@ export default function CategoriesPage() {
                 );
               })()}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── "Add a Sort" manager modal ───────────────────────────────── */}
+      {showSortMgr && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 px-4 py-6" style={{ backgroundColor: "#00000088" }}>
+          <div className="w-full max-w-md rounded-2xl p-7 flex flex-col gap-5 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-extrabold" style={{ color: "#e8d5a0" }}>Sorting Groups</h2>
+              <button onClick={() => setShowSortMgr(false)} className="text-lg leading-none" style={{ color: "#e8d5a0", opacity: 0.5 }} aria-label="Close">✕</button>
+            </div>
+            <p className="text-xs -mt-3" style={{ color: "#e8d5a0", opacity: 0.5 }}>Create the names once here. Each category then picks one from a dropdown — no typos, no duplicates.</p>
+
+            {sortMgrError && (
+              <p className="text-sm rounded-xl px-4 py-3" style={{ color: "#fca5a5", backgroundColor: "#dc262622", border: "1px solid #dc262655" }}>{sortMgrError}</p>
+            )}
+
+            <div className="flex flex-col gap-2">
+              {sorts.length === 0 && (
+                <p className="text-sm text-center py-4" style={{ color: "#e8d5a0", opacity: 0.4 }}>No sorting groups yet.</p>
+              )}
+              {sorts.map((s) => (
+                <div key={s.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050" }}>
+                  <span className="text-sm font-medium truncate" style={{ color: "#e8d5a0" }}>{s.name_en} <span style={{ opacity: 0.5 }}>— {s.name_ar}</span></span>
+                  <button onClick={() => deleteSort(s)} className="text-xs font-bold shrink-0 ml-3 px-2.5 py-1 rounded-lg" style={{ backgroundColor: "#dc262622", color: "#f87171" }}>Remove</button>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-xl p-4 flex flex-col gap-3" style={{ backgroundColor: "#120d1f", border: "1px dashed #2e2050" }}>
+              <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>Add a new sort</p>
+              <input type="text" value={newSortEn} onChange={(e) => setNewSortEn(e.target.value)} placeholder="Name (English) — e.g. Entertainment" className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+              <input type="text" value={newSortAr} onChange={(e) => setNewSortAr(e.target.value)} placeholder="الاسم (بالعربية) — مثال: ترفيه" dir="rtl" className="w-full px-4 py-3 rounded-xl text-sm outline-none text-right" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+              <button onClick={addSort} disabled={savingSort || !newSortEn.trim() || !newSortAr.trim()}
+                className="py-2.5 rounded-full text-sm font-bold hover:opacity-90"
+                style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: (savingSort || !newSortEn.trim() || !newSortAr.trim()) ? 0.4 : 1, cursor: (savingSort || !newSortEn.trim() || !newSortAr.trim()) ? "not-allowed" : "pointer" }}>
+                {savingSort ? "Adding…" : "Add Sort"}
+              </button>
+            </div>
+
+            <button onClick={() => setShowSortMgr(false)} className="py-2.5 rounded-full text-sm font-medium" style={{ border: "1px solid #2e2050", color: "#e8d5a0" }}>Done</button>
           </div>
         </div>
       )}
