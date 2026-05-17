@@ -27,9 +27,12 @@ interface BoardCell {
   audio_url?: string | null;   // Per-question audio / music
 }
 interface CategoryOption {
+  id?: string | null;
   name: string;
   name_ar?: string | null;
   image_url?: string | null;
+  sort_label_en?: string | null;
+  sort_label_ar?: string | null;
   // Powers the "?" preview shown on the category-picker tiles.
   description_en?: string | null;
   description_ar?: string | null;
@@ -423,13 +426,45 @@ function LowQuestionsModal({ cat, onAnyway, onClose }:
 
 // ─── Category Select ──────────────────────────────────────────────────────────
 
-function CategorySelect({ selected, coins, categories, unseenByCategory, onToggle, onShowNoBanner, onNext }:
-  { selected: string[]; coins: number; categories: CategoryOption[]; unseenByCategory: Record<string, number>; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
+function CategorySelect({ selected, coins, categories, unseenByCategory, favoriteIds, onToggleFavorite, onToggle, onShowNoBanner, onNext }:
+  { selected: string[]; coins: number; categories: CategoryOption[]; unseenByCategory: Record<string, number>; favoriteIds: Set<string>; onToggleFavorite: (catId: string) => void; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
   const { t, lang } = useLanguage();
+  const isAr = lang === "ar";
   const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
   const [previewCat, setPreviewCat] = useState<CategoryOption | null>(null);
   const [lowQCat,   setLowQCat]   = useState<CategoryOption | null>(null);
   const [acked,     setAcked]     = useState<Set<string>>(new Set()); // tiles the player said "anyway" for
+  // Active filter chip: "all", "fav", or a sorting-group English label.
+  const [filter,    setFilter]    = useState<string>("all");
+  // Transient "you have no favorites yet" bubble near the click point.
+  const [noFav,     setNoFav]     = useState<{ x: number; y: number } | null>(null);
+  const noFavTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Distinct sorting groups (deduped by English label, Arabic carried along).
+  const sortGroups: { en: string; ar: string }[] = [];
+  for (const c of categories) {
+    const en = (c.sort_label_en ?? "").trim();
+    if (!en || sortGroups.some((g) => g.en === en)) continue;
+    sortGroups.push({ en, ar: (c.sort_label_ar ?? "").trim() || en });
+  }
+
+  const visibleCategories = categories.filter((c) => {
+    if (filter === "all") return true;
+    if (filter === "fav") return !!c.id && favoriteIds.has(c.id);
+    return (c.sort_label_en ?? "").trim() === filter;
+  });
+
+  const handleFavChip = (e: { clientX: number; clientY: number }) => {
+    if (favoriteIds.size === 0) {
+      if (noFavTimer.current) clearTimeout(noFavTimer.current);
+      setNoFav({ x: e.clientX, y: e.clientY });
+      noFavTimer.current = setTimeout(() => setNoFav(null), 2600);
+      return;
+    }
+    setFilter("fav");
+  };
+
+  useEffect(() => () => { if (noFavTimer.current) clearTimeout(noFavTimer.current); }, []);
 
   const handleClick = (catName: string) => {
     if (selected.includes(catName)) { onToggle(catName); return; }
@@ -460,19 +495,57 @@ function CategorySelect({ selected, coins, categories, unseenByCategory, onToggl
           {selected.length > 0 && <span style={{ color: "#d4860a" }}> · {questionsPerCat} {t.arena.questionsEach}</span>}
         </p>
       </div>
+
+      {/* Sorting / filter chips. "All" + "Favorites" are always present;
+          each distinct admin sorting group adds one more chip. */}
+      {categories.length > 0 && (
+        <div className="flex flex-wrap justify-center gap-2" style={{ direction: isAr ? "rtl" : "ltr" }}>
+          {(() => {
+            const chip = (key: string, label: string, onClick: (e: { clientX: number; clientY: number }) => void) => {
+              const active = filter === key;
+              return (
+                <button key={key} type="button" onClick={onClick}
+                  className="px-4 py-2 rounded-full text-xs md:text-sm font-bold transition-all"
+                  style={{
+                    backgroundColor: active ? "#d4860a" : "#1e1530",
+                    color: active ? "#120d1f" : "#e8d5a0",
+                    border: `1px solid ${active ? "#d4860a" : "#2e2050"}`,
+                  }}>
+                  {label}
+                </button>
+              );
+            };
+            return (
+              <>
+                {chip("all", t.arena.filterAll, () => setFilter("all"))}
+                {chip("fav", t.arena.filterFavorites, handleFavChip)}
+                {sortGroups.map((g) => chip(g.en, isAr ? g.ar : g.en, () => setFilter(g.en)))}
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {categories.length === 0 && (
         <div className="rounded-2xl px-6 py-12 text-center" style={{ backgroundColor: "#1e1530", border: "1px dashed #2e2050" }}>
           <p className="text-2xl mb-2">🗂️</p>
           <p className="text-sm" style={{ color: "#e8d5a0", opacity: 0.6 }}>No categories available yet — check back soon.</p>
         </div>
       )}
+      {categories.length > 0 && visibleCategories.length === 0 && (
+        <div className="rounded-2xl px-6 py-10 text-center" style={{ backgroundColor: "#1e1530", border: "1px dashed #2e2050" }}>
+          <p className="text-sm" style={{ color: "#e8d5a0", opacity: 0.6 }}>{filter === "fav" ? t.arena.noFavorites : "—"}</p>
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5 md:gap-7 lg:gap-10">
-        {categories.map((cat) => {
+        {visibleCategories.map((cat) => {
           const isSelected = selected.includes(cat.name);
           const disabled   = !isSelected && selected.length >= 6;
           const hasImage   = !!cat.image_url;
           const hasPreview = !!(cat.sample_question_en || cat.sample_question_ar);
           const lowQ       = isLowOnQuestions(cat, isSelected, disabled);
+          const isFav      = !!cat.id && favoriteIds.has(cat.id);
+          const qLeft      = unseenByCategory[cat.name];
           // Always identify by English name internally; show Arabic label if available + lang=ar
           const displayName = lang === "ar" && cat.name_ar ? cat.name_ar : cat.name;
           return (
@@ -507,11 +580,37 @@ function CategorySelect({ selected, coins, categories, unseenByCategory, onToggl
                   !
                 </span>
               )}
+              {/* Questions-left circle — top-centre, always visible. Shows
+                  this player's remaining unseen count (= total when unused). */}
+              {qLeft !== undefined && (
+                <span
+                  title={t.arena.questionsLeftAria} aria-label={`${qLeft} ${t.arena.questionsLeftAria}`}
+                  className="absolute top-2 left-1/2 -translate-x-1/2 z-10 min-w-7 h-7 px-2 rounded-full flex items-center justify-center text-xs font-extrabold"
+                  style={{ backgroundColor: "#120d1fcc", color: "#e8d5a0", border: "1.5px solid #d4860a", backdropFilter: "blur(2px)" }}
+                >
+                  {qLeft}
+                </span>
+              )}
               {hasImage && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={cat.image_url!} alt={displayName}
                   className="w-full aspect-square object-cover"
                   style={{ opacity: disabled ? 0.3 : 1, backgroundColor: "#0d091a" }} />
+              )}
+              {/* Favorite heart — bottom-right. stopPropagation so it never
+                  toggles category selection. Needs a category id. */}
+              {cat.id && (
+                <span
+                  role="button" tabIndex={0}
+                  title={isFav ? t.arena.favRemove : t.arena.favAdd}
+                  aria-label={isFav ? t.arena.favRemove : t.arena.favAdd}
+                  onClick={(e) => { e.stopPropagation(); onToggleFavorite(cat.id!); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onToggleFavorite(cat.id!); } }}
+                  className="absolute bottom-2 right-2 z-10 w-8 h-8 rounded-full flex items-center justify-center text-base"
+                  style={{ backgroundColor: "#120d1fcc", border: `1.5px solid ${isFav ? "#f87171" : "#2e2050"}`, cursor: "pointer", backdropFilter: "blur(2px)" }}
+                >
+                  {isFav ? "❤️" : "🤍"}
+                </span>
               )}
               <span className="px-3 py-3 md:px-4 md:py-3 block text-center truncate">
                 {isSelected && <span className="mr-1.5">✓</span>}{displayName}
@@ -541,6 +640,23 @@ function CategorySelect({ selected, coins, categories, unseenByCategory, onToggl
           {t.arena.next}
         </button>
       </div>
+
+      {/* Transient bubble shown next to the click when the player taps the
+          Favorites chip but hasn't favorited anything yet. */}
+      {noFav && (
+        <div
+          className="fixed z-50 px-3 py-2 rounded-lg text-xs font-bold pointer-events-none"
+          style={{
+            left: Math.min(noFav.x + 12, (typeof window !== "undefined" ? window.innerWidth : 9999) - 220),
+            top: noFav.y + 12,
+            backgroundColor: "#1e1530",
+            color: "#e8d5a0",
+            border: "1px solid #d4860a",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+          }}>
+          {t.arena.noFavorites}
+        </div>
+      )}
     </div>
   );
 }
@@ -1088,6 +1204,8 @@ export default function ArenaGame() {
   // categoryName -> how many questions in it this player hasn't seen yet.
   // Drives the red "!" warning badge on the picker.
   const [unseenByCategory, setUnseenByCategory] = useState<Record<string, number>>({});
+  // Category ids this player has favorited (hearted).
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
   const [step,     setStep]     = useState<Step>("categories");
   const [selectedCategories, setSelected] = useState<string[]>([]);
@@ -1239,9 +1357,12 @@ export default function ArenaGame() {
             (c) => !(c.is_hidden as boolean | null | undefined),
           );
           return rows.map((c) => ({
+            id:                 (c.id as string | null) ?? null,
             name:               c.name_en as string,
             name_ar:            (c.name_ar as string | null) ?? null,
             image_url:          (c.image_url as string | null) ?? null,
+            sort_label_en:      (c.sort_label_en as string | null) ?? null,
+            sort_label_ar:      (c.sort_label_ar as string | null) ?? null,
             description_en:      (c.description_en as string | null) ?? null,
             description_ar:      (c.description_ar as string | null) ?? null,
             sample_question_en:  (c.sample_question_en as string | null) ?? null,
@@ -1286,12 +1407,26 @@ export default function ArenaGame() {
         } catch { return {}; }
       })();
 
-      const [coinsValue, categoryList, unseen] = await Promise.all([profilePromise, categoriesPromise, unseenPromise]);
+      // This player's favorited category ids. Empty set if the table
+      // doesn't exist yet (migration not run) — degrades gracefully.
+      const favoritesPromise = (async (): Promise<Set<string>> => {
+        try {
+          const { data, error } = await supabase
+            .from("user_favorite_categories")
+            .select("category_id")
+            .eq("user_id", userIdLocal!);
+          if (error || !data) return new Set();
+          return new Set((data as Array<{ category_id: string }>).map((r) => r.category_id));
+        } catch { return new Set(); }
+      })();
+
+      const [coinsValue, categoryList, unseen, favorites] = await Promise.all([profilePromise, categoriesPromise, unseenPromise, favoritesPromise]);
 
       if (cancelled) return;
       setCoins(coinsValue);
       if (categoryList) setLiveCategories(categoryList);
       setUnseenByCategory(unseen);
+      setFavoriteIds(favorites);
       finishWithDefaults(userIdLocal);
     })();
 
@@ -1346,6 +1481,34 @@ export default function ArenaGame() {
   const toggleCategory = useCallback((cat: string) => {
     setSelected((p) => p.includes(cat) ? p.filter((c) => c !== cat) : [...p, cat]);
   }, []);
+
+  // Heart a category on/off. Optimistic: flip the UI first, then write to
+  // the DB; on DB failure revert so the heart never lies.
+  const toggleFavorite = useCallback((catId: string) => {
+    if (!catId) return;
+    const wasFav = favoriteIds.has(catId);
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (wasFav) next.delete(catId); else next.add(catId);
+      return next;
+    });
+    if (!isSupabaseConfigured || !userId) return;
+    (async () => {
+      try {
+        const { error } = wasFav
+          ? await supabase.from("user_favorite_categories").delete().eq("user_id", userId).eq("category_id", catId)
+          : await supabase.from("user_favorite_categories").insert({ user_id: userId, category_id: catId });
+        if (error) throw error;
+      } catch {
+        // Revert on failure (e.g. table missing / offline).
+        setFavoriteIds((prev) => {
+          const next = new Set(prev);
+          if (wasFav) next.add(catId); else next.delete(catId);
+          return next;
+        });
+      }
+    })();
+  }, [favoriteIds, userId]);
 
   const handleTeamCountChange = (n: number) => {
     setTeamCount(n);
@@ -1501,7 +1664,7 @@ export default function ArenaGame() {
 
       {step === "categories" && (
         <CategorySelect selected={selectedCategories} coins={coins} categories={liveCategories}
-          unseenByCategory={unseenByCategory}
+          unseenByCategory={unseenByCategory} favoriteIds={favoriteIds} onToggleFavorite={toggleFavorite}
           onToggle={toggleCategory} onShowNoBanner={() => setShowBanner(true)} onNext={() => setStep("gameMode")} />
       )}
       {step === "gameMode" && (

@@ -50,6 +50,10 @@ export interface Category {
   // Optional photo shown alongside the sample question in the "?" preview
   // (see add-sample-image.sql migration).
   sample_image_url?: string | null;
+  // Optional grouping label for the category-selection filter chips
+  // (see add-sorting-and-favorites.sql migration).
+  sort_label_en?: string | null;
+  sort_label_ar?: string | null;
 }
 
 export interface Question {

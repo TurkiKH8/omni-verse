@@ -56,6 +56,10 @@ export default function CategoriesPage() {
   const [formSampleImageUrl, setFormSampleImageUrl] = useState<string | null>(null);
   const [sampleImageFile, setSampleImageFile] = useState<File | null>(null);
   const [sampleImageError, setSampleImageError] = useState<string>("");
+  // Optional sorting-group label (becomes a filter chip on the player page).
+  const [formSortEn, setFormSortEn] = useState("");
+  const [formSortAr, setFormSortAr] = useState("");
+  const [showSort, setShowSort] = useState(false);
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [mutError, setMutError] = useState("");
@@ -117,6 +121,7 @@ export default function CategoriesPage() {
     setFormSampleQEn(""); setFormSampleAEn("");
     setFormSampleQAr(""); setFormSampleAAr("");
     setFormSampleImageUrl(null); setSampleImageFile(null); setSampleImageError("");
+    setFormSortEn(""); setFormSortAr(""); setShowSort(false);
   };
 
   const openAdd = () => {
@@ -131,17 +136,21 @@ export default function CategoriesPage() {
     setFormSampleQEn(cat.sample_question_en ?? ""); setFormSampleAEn(cat.sample_answer_en ?? "");
     setFormSampleQAr(cat.sample_question_ar ?? ""); setFormSampleAAr(cat.sample_answer_ar ?? "");
     setFormSampleImageUrl(cat.sample_image_url ?? null); setSampleImageFile(null); setSampleImageError("");
+    setFormSortEn(cat.sort_label_en ?? ""); setFormSortAr(cat.sort_label_ar ?? "");
+    setShowSort(!!(cat.sort_label_en || cat.sort_label_ar));
     setFormImageUrl(cat.image_url ?? null); setImageFile(null); setImageError("");
     setShowForm(true);
   };
 
   // Every field is required — name, Arabic name, description (both langs),
-  // and a sample question + answer in both langs.
+  // and a sample question + answer in both langs. The sorting group is
+  // optional, but if its panel is opened BOTH languages must be filled.
   const requiredFieldsFilled = () =>
     !!formName.trim() && !!formNameAr.trim() &&
     !!formDescEn.trim() && !!formDescAr.trim() &&
     !!formSampleQEn.trim() && !!formSampleAEn.trim() &&
-    !!formSampleQAr.trim() && !!formSampleAAr.trim();
+    !!formSampleQAr.trim() && !!formSampleAAr.trim() &&
+    (!showSort || (!!formSortEn.trim() && !!formSortAr.trim()));
 
   const handleSave = async () => {
     if (!requiredFieldsFilled()) return;
@@ -171,11 +180,15 @@ export default function CategoriesPage() {
       sample_answer_ar:   formSampleAAr.trim(),
     };
 
+    // Sorting group: keep blank as NULL so it doesn't form an empty chip.
+    const sortEn = formSortEn.trim() || null;
+    const sortAr = formSortAr.trim() || null;
+
     if (isSupabaseConfigured) {
-      // Newest: includes the optional sample-question photo column.
+      // Newest: includes the optional sample-question photo + sort group.
       const fullPayload: Record<string, unknown> = editId
-        ? { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, updated_at: new Date().toISOString() }
-        : { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, active: true, question_count: 0 };
+        ? { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, sort_label_en: sortEn, sort_label_ar: sortAr, updated_at: new Date().toISOString() }
+        : { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, sort_label_en: sortEn, sort_label_ar: sortAr, active: true, question_count: 0 };
       // If the sample_image_url column is missing (add-sample-image.sql not
       // run yet) retry WITHOUT it — this is the previously-working payload,
       // so descriptions + sample text are still saved (no data loss).
@@ -199,9 +212,9 @@ export default function CategoriesPage() {
       await fetchCategories();
     } else {
       if (editId) {
-        setCategories((p) => p.map((c) => c.id === editId ? { ...c, name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl } : c));
+        setCategories((p) => p.map((c) => c.id === editId ? { ...c, name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, sort_label_en: sortEn, sort_label_ar: sortAr } : c));
       } else {
-        setCategories((p) => [...p, { id: String(Date.now()), name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, active: true, question_count: 0, created_at: "", updated_at: "" }]);
+        setCategories((p) => [...p, { id: String(Date.now()), name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, sort_label_en: sortEn, sort_label_ar: sortAr, active: true, question_count: 0, created_at: "", updated_at: "" }]);
       }
     }
 
@@ -413,6 +426,34 @@ export default function CategoriesPage() {
                   <p className="text-xs" style={{ color: "#f87171" }}>{sampleImageError}</p>
                 )}
               </div>
+            </div>
+
+            {/* ── Sorting group (optional) ────────────────────────────── */}
+            <div className="flex flex-col gap-2">
+              {!showSort ? (
+                <button type="button" onClick={() => setShowSort(true)}
+                  className="self-start px-4 py-2 rounded-full text-xs font-bold"
+                  style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
+                  + Set sorting group
+                </button>
+              ) : (
+                <div className="rounded-xl p-4 flex flex-col gap-3" style={{ backgroundColor: "#120d1f", border: "1px dashed #2e2050" }}>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>Sorting group (filter chip on the player page)</p>
+                    <button type="button" onClick={() => { setShowSort(false); setFormSortEn(""); setFormSortAr(""); }}
+                      className="text-xs font-medium" style={{ color: "#f87171" }}>Remove</button>
+                  </div>
+                  <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.5 }}>Categories sharing the same label become one chip. Both languages required.</p>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sorting Label (English) <span style={{ color: "#f87171" }}>*</span></label>
+                    <input type="text" value={formSortEn} onChange={(e) => setFormSortEn(e.target.value)} placeholder="e.g. Entertainment" className="w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sorting Label (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
+                    <input type="text" value={formSortAr} onChange={(e) => setFormSortAr(e.target.value)} placeholder="مثال: ترفيه" dir="rtl" className="w-full px-4 py-3 rounded-xl text-sm outline-none text-right" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5">
