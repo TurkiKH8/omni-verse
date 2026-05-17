@@ -67,6 +67,13 @@ export default function Home() {
               {t.home.learnMore}
             </Link>
           </div>
+
+          {/* Branded mini-game entry — the Omni Guardian Run */}
+          <Link href="/guardian"
+            className="mt-2 px-7 py-3 rounded-full text-sm font-bold flex items-center gap-2 transition-all hover:opacity-90"
+            style={{ backgroundColor: "#7c3aed22", color: "#c4b5fd", border: "1px solid #7c3aed", boxShadow: "0 0 22px rgba(124,58,237,0.35)" }}>
+            <span aria-hidden>🛡️</span> {t.home.playGuardian}
+          </Link>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-24 max-w-5xl w-full">

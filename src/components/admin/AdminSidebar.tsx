@@ -23,6 +23,7 @@ const navItems: NavItem[] = [
   { icon: "🧑‍💼", label: "Customer Database",  href: "/admin/customers",  adminOnly: true                      },
   { icon: "🏅", label: "Ranks",               href: "/admin/ranks",         adminOnly: true, masterOnly: true    },
   { icon: "✍️", label: "Site Copy",           href: "/admin/translations",  adminOnly: true, masterOnly: true    },
+  { icon: "🛡️", label: "Mini-Game",           href: "/admin/mini-game",     adminOnly: true                      },
   { icon: "⚙️", label: "Settings",            href: "/admin/settings",      adminOnly: true                      },
   { icon: "👤", label: "Developer",           href: "/admin/developer",  adminOnly: true                      },
   { icon: "📋", label: "Audit Log",           href: "/admin/audit-log",  adminOnly: true                      },
