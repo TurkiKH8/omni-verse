@@ -387,7 +387,7 @@ export default function CategoriesPage() {
                 {(sampleImageFile || formSampleImageUrl) && (
                   <div className="relative w-full rounded-xl overflow-hidden" style={{ border: "1px solid #2e2050", backgroundColor: "#1e1530" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={sampleImageFile ? URL.createObjectURL(sampleImageFile) : formSampleImageUrl ?? ""} alt="" className="w-full max-h-32 object-cover" />
+                    <img src={sampleImageFile ? URL.createObjectURL(sampleImageFile) : formSampleImageUrl ?? ""} alt="" className="w-full max-h-40 object-contain" />
                     <button type="button" onClick={() => { setSampleImageFile(null); setFormSampleImageUrl(null); }}
                       className="absolute top-2 right-2 w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center"
                       style={{ backgroundColor: "#dc2626", color: "#fff" }}

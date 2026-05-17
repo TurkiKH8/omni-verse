@@ -358,7 +358,7 @@ function CategoryPreviewModal({ cat, onClose }: { cat: CategoryOption; onClose: 
           </span>
           {sampleImage && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={sampleImage} alt="" className="w-full max-h-56 rounded-xl object-cover" style={{ backgroundColor: "#0d091a" }} />
+            <img src={sampleImage} alt="" className="w-full max-h-64 rounded-xl object-contain" style={{ backgroundColor: "#0d091a" }} />
           )}
           <p className="text-lg md:text-xl font-bold leading-snug" style={{ color: "#e8d5a0", direction: isAr ? "rtl" : "ltr" }}>{question}</p>
           {revealed ? (
