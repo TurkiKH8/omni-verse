@@ -168,6 +168,7 @@ export const TRANSLATIONS = {
       noFavorites:      "You don't have a favorite category yet",
       favAdd:           "Add to favorites",
       favRemove:        "Remove from favorites",
+      favSaveFailed:    "Couldn't save your favorite — please try again later.",
       questionsLeftAria: "New questions left for you",
     },
     history: {
@@ -410,6 +411,7 @@ export const TRANSLATIONS = {
       noFavorites:      "ليس لديك فئة مفضلة بعد",
       favAdd:           "أضف إلى المفضلة",
       favRemove:        "أزل من المفضلة",
+      favSaveFailed:    "تعذّر حفظ المفضلة — حاول مرة أخرى لاحقًا.",
       questionsLeftAria: "الأسئلة الجديدة المتبقية لك",
     },
     history: {

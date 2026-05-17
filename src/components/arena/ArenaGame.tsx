@@ -426,8 +426,8 @@ function LowQuestionsModal({ cat, onAnyway, onClose }:
 
 // ─── Category Select ──────────────────────────────────────────────────────────
 
-function CategorySelect({ selected, coins, categories, unseenByCategory, favoriteIds, onToggleFavorite, onToggle, onShowNoBanner, onNext }:
-  { selected: string[]; coins: number; categories: CategoryOption[]; unseenByCategory: Record<string, number>; favoriteIds: Set<string>; onToggleFavorite: (catId: string) => void; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
+function CategorySelect({ selected, coins, categories, unseenByCategory, favoriteIds, onToggleFavorite, favError, onToggle, onShowNoBanner, onNext }:
+  { selected: string[]; coins: number; categories: CategoryOption[]; unseenByCategory: Record<string, number>; favoriteIds: Set<string>; onToggleFavorite: (catId: string) => void; favError: boolean; onToggle: (c: string) => void; onShowNoBanner: () => void; onNext: () => void }) {
   const { t, lang } = useLanguage();
   const isAr = lang === "ar";
   const questionsPerCat = QUESTIONS_PER_CATEGORY[selected.length] ?? 6;
@@ -655,6 +655,14 @@ function CategorySelect({ selected, coins, categories, unseenByCategory, favorit
             boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
           }}>
           {t.arena.noFavorites}
+        </div>
+      )}
+
+      {/* Bottom toast shown when a favorite couldn't be saved. */}
+      {favError && (
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-50 px-5 py-3 rounded-xl text-sm font-bold text-center"
+          style={{ backgroundColor: "#1e1530", color: "#fca5a5", border: "1px solid #dc2626", boxShadow: "0 4px 16px rgba(0,0,0,0.5)" }}>
+          {t.arena.favSaveFailed}
         </div>
       )}
     </div>
@@ -1206,6 +1214,8 @@ export default function ArenaGame() {
   const [unseenByCategory, setUnseenByCategory] = useState<Record<string, number>>({});
   // Category ids this player has favorited (hearted).
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  // True briefly when a favorite couldn't be saved (e.g. table missing).
+  const [favErr, setFavErr] = useState(false);
 
   const [step,     setStep]     = useState<Step>("categories");
   const [selectedCategories, setSelected] = useState<string[]>([]);
@@ -1500,12 +1510,15 @@ export default function ArenaGame() {
           : await supabase.from("user_favorite_categories").insert({ user_id: userId, category_id: catId });
         if (error) throw error;
       } catch {
-        // Revert on failure (e.g. table missing / offline).
+        // Revert on failure (e.g. table missing / offline) and tell the user
+        // instead of silently flickering the heart back off.
         setFavoriteIds((prev) => {
           const next = new Set(prev);
           if (wasFav) next.add(catId); else next.delete(catId);
           return next;
         });
+        setFavErr(true);
+        setTimeout(() => setFavErr(false), 3500);
       }
     })();
   }, [favoriteIds, userId]);
@@ -1664,7 +1677,7 @@ export default function ArenaGame() {
 
       {step === "categories" && (
         <CategorySelect selected={selectedCategories} coins={coins} categories={liveCategories}
-          unseenByCategory={unseenByCategory} favoriteIds={favoriteIds} onToggleFavorite={toggleFavorite}
+          unseenByCategory={unseenByCategory} favoriteIds={favoriteIds} onToggleFavorite={toggleFavorite} favError={favErr}
           onToggle={toggleCategory} onShowNoBanner={() => setShowBanner(true)} onNext={() => setStep("gameMode")} />
       )}
       {step === "gameMode" && (

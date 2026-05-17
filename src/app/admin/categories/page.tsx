@@ -432,9 +432,10 @@ export default function CategoriesPage() {
             <div className="flex flex-col gap-2">
               {!showSort ? (
                 <button type="button" onClick={() => setShowSort(true)}
-                  className="self-start px-4 py-2 rounded-full text-xs font-bold"
-                  style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
-                  + Set sorting group
+                  className="w-full py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+                  style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1.5px dashed #7c3aed" }}>
+                  <span className="text-lg leading-none">⇅</span> Add Sorting Group Button
+                  <span className="font-normal opacity-60">(optional)</span>
                 </button>
               ) : (
                 <div className="rounded-xl p-4 flex flex-col gap-3" style={{ backgroundColor: "#120d1f", border: "1px dashed #2e2050" }}>
