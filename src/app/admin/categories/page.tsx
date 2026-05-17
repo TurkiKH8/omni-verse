@@ -15,11 +15,12 @@ async function logAction(action: string, target: string, type: "create" | "updat
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg"];
 
-// Uploads a PNG/JPG to the public "images" bucket; returns the public URL or null.
-async function uploadImageToStorage(file: File): Promise<string | null> {
+// Uploads a PNG/JPG to the public "images" bucket; returns the public URL or
+// null. `folder` keeps cover images and sample-question images apart.
+async function uploadImageToStorage(file: File, folder = "categories"): Promise<string | null> {
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return null;
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
-  const path = `categories/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const { error } = await supabase.storage.from("images").upload(path, file, {
     contentType: file.type,
     upsert: false,
@@ -51,6 +52,10 @@ export default function CategoriesPage() {
   const [formImageUrl, setFormImageUrl] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string>("");
+  // Optional photo attached to the sample question (separate from the cover).
+  const [formSampleImageUrl, setFormSampleImageUrl] = useState<string | null>(null);
+  const [sampleImageFile, setSampleImageFile] = useState<File | null>(null);
+  const [sampleImageError, setSampleImageError] = useState<string>("");
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [mutError, setMutError] = useState("");
@@ -111,6 +116,7 @@ export default function CategoriesPage() {
     setFormDescEn(""); setFormDescAr("");
     setFormSampleQEn(""); setFormSampleAEn("");
     setFormSampleQAr(""); setFormSampleAAr("");
+    setFormSampleImageUrl(null); setSampleImageFile(null); setSampleImageError("");
   };
 
   const openAdd = () => {
@@ -124,6 +130,7 @@ export default function CategoriesPage() {
     setFormDescEn(cat.description_en ?? "");   setFormDescAr(cat.description_ar ?? "");
     setFormSampleQEn(cat.sample_question_en ?? ""); setFormSampleAEn(cat.sample_answer_en ?? "");
     setFormSampleQAr(cat.sample_question_ar ?? ""); setFormSampleAAr(cat.sample_answer_ar ?? "");
+    setFormSampleImageUrl(cat.sample_image_url ?? null); setSampleImageFile(null); setSampleImageError("");
     setFormImageUrl(cat.image_url ?? null); setImageFile(null); setImageError("");
     setShowForm(true);
   };
@@ -148,6 +155,13 @@ export default function CategoriesPage() {
       else setImageError("Image upload failed (bucket missing or wrong format). Category saved without new image.");
     }
 
+    let finalSampleImageUrl: string | null = formSampleImageUrl;
+    if (sampleImageFile && isSupabaseConfigured) {
+      const url = await uploadImageToStorage(sampleImageFile, "sample-questions");
+      if (url) finalSampleImageUrl = url;
+      else setSampleImageError("Sample image upload failed (bucket missing or wrong format). Category saved without it.");
+    }
+
     const sampleFields = {
       description_en:     formDescEn.trim(),
       description_ar:     formDescAr.trim(),
@@ -158,11 +172,17 @@ export default function CategoriesPage() {
     };
 
     if (isSupabaseConfigured) {
+      // Newest: includes the optional sample-question photo column.
       const fullPayload: Record<string, unknown> = editId
+        ? { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, updated_at: new Date().toISOString() }
+        : { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, active: true, question_count: 0 };
+      // If the sample_image_url column is missing (add-sample-image.sql not
+      // run yet) retry WITHOUT it — this is the previously-working payload,
+      // so descriptions + sample text are still saved (no data loss).
+      const noSampleImagePayload: Record<string, unknown> = editId
         ? { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, updated_at: new Date().toISOString() }
         : { name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, active: true, question_count: 0 };
-      // Fallback for a DB that hasn't run the migration yet — drops the new
-      // columns so the save still goes through (degrades gracefully).
+      // Last resort for a DB with none of the detail columns — names only.
       const basicPayload: Record<string, unknown> = editId
         ? { name_en: formName, name_ar: formNameAr, updated_at: new Date().toISOString() }
         : { name_en: formName, name_ar: formNameAr, active: true, question_count: 0 };
@@ -171,16 +191,17 @@ export default function CategoriesPage() {
         if (editId) return supabase.from("categories").update(payload).eq("id", editId);
         return supabase.from("categories").insert(payload);
       };
-      const result = await trySave(fullPayload);
+      let result = await trySave(fullPayload);
+      if (result.error) result = await trySave(noSampleImagePayload);
       if (result.error) await trySave(basicPayload);
 
       await logAction(editId ? "Updated category" : "Created category", formName, editId ? "update" : "create");
       await fetchCategories();
     } else {
       if (editId) {
-        setCategories((p) => p.map((c) => c.id === editId ? { ...c, name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields } : c));
+        setCategories((p) => p.map((c) => c.id === editId ? { ...c, name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl } : c));
       } else {
-        setCategories((p) => [...p, { id: String(Date.now()), name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, active: true, question_count: 0, created_at: "", updated_at: "" }]);
+        setCategories((p) => [...p, { id: String(Date.now()), name_en: formName, name_ar: formNameAr, image_url: finalImageUrl, ...sampleFields, sample_image_url: finalSampleImageUrl, active: true, question_count: 0, created_at: "", updated_at: "" }]);
       }
     }
 
@@ -318,7 +339,7 @@ export default function CategoriesPage() {
 
       {showForm && (
         <div className="fixed inset-0 flex items-center justify-center z-50 px-4 py-6" style={{ backgroundColor: "#00000088" }}>
-          <div className="w-full max-w-lg rounded-2xl p-7 flex flex-col gap-5 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+          <div className="w-full max-w-xl rounded-2xl p-7 flex flex-col gap-5 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
             <h2 className="text-lg font-extrabold" style={{ color: "#e8d5a0" }}>{editId ? "Edit Category" : "New Category"}</h2>
             <p className="text-xs -mt-3" style={{ color: "#e8d5a0", opacity: 0.5 }}>All fields are required. The description and sample question power the &ldquo;?&rdquo; preview players see in the category picker.</p>
             <div className="flex flex-col gap-1.5">
@@ -358,6 +379,39 @@ export default function CategoriesPage() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sample Answer (Arabic) <span style={{ color: "#f87171" }}>*</span></label>
                 <input type="text" value={formSampleAAr} onChange={(e) => setFormSampleAAr(e.target.value)} placeholder="مثال: Au" required dir="rtl" className="w-full px-4 py-3 rounded-xl text-sm outline-none text-right" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050", color: "#e8d5a0" }} />
+              </div>
+
+              {/* Optional photo for the sample question (shown in the "?" preview). */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium" style={{ color: "#e8d5a0" }}>Sample Question Photo <span style={{ opacity: 0.4 }}>optional · PNG / JPG</span></label>
+                {(sampleImageFile || formSampleImageUrl) && (
+                  <div className="relative w-full rounded-xl overflow-hidden" style={{ border: "1px solid #2e2050", backgroundColor: "#1e1530" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={sampleImageFile ? URL.createObjectURL(sampleImageFile) : formSampleImageUrl ?? ""} alt="" className="w-full max-h-32 object-cover" />
+                    <button type="button" onClick={() => { setSampleImageFile(null); setFormSampleImageUrl(null); }}
+                      className="absolute top-2 right-2 w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center"
+                      style={{ backgroundColor: "#dc2626", color: "#fff" }}
+                      aria-label="Remove sample photo">×</button>
+                  </div>
+                )}
+                <input type="file"
+                  accept="image/png,image/jpeg,image/jpg"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    setSampleImageError("");
+                    if (f && !ALLOWED_IMAGE_TYPES.includes(f.type)) {
+                      setSampleImageError("Only PNG, JPEG or JPG files are allowed.");
+                      setSampleImageFile(null);
+                      return;
+                    }
+                    setSampleImageFile(f);
+                  }}
+                  className="text-xs file:mr-3 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:cursor-pointer"
+                  style={{ color: "#e8d5a0" }}
+                />
+                {sampleImageError && (
+                  <p className="text-xs" style={{ color: "#f87171" }}>{sampleImageError}</p>
+                )}
               </div>
             </div>
 

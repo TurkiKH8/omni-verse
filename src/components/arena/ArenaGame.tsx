@@ -37,6 +37,7 @@ interface CategoryOption {
   sample_answer_en?: string | null;
   sample_question_ar?: string | null;
   sample_answer_ar?: string | null;
+  sample_image_url?: string | null;
 }
 
 const QUESTIONS_PER_CATEGORY: Record<number, number> = {
@@ -321,11 +322,12 @@ function CategoryPreviewModal({ cat, onClose }: { cat: CategoryOption; onClose: 
   const description = (isAr ? cat.description_ar : cat.description_en) || (cat.description_en || cat.description_ar || "");
   const question    = (isAr ? cat.sample_question_ar : cat.sample_question_en) || (cat.sample_question_en || cat.sample_question_ar || "");
   const answer      = (isAr ? cat.sample_answer_ar : cat.sample_answer_en) || (cat.sample_answer_en || cat.sample_answer_ar || "");
+  const sampleImage = cat.sample_image_url || null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6" style={{ backgroundColor: "#000000aa" }}
          onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl p-6 md:p-7 flex flex-col gap-5 max-h-[90vh] overflow-y-auto"
+      <div className="w-full max-w-lg rounded-2xl p-6 md:p-8 flex flex-col gap-5 max-h-[90vh] overflow-y-auto"
            style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}
            onClick={(e) => e.stopPropagation()}>
         {/* Header: cover thumbnail + name */}
@@ -344,7 +346,7 @@ function CategoryPreviewModal({ cat, onClose }: { cat: CategoryOption; onClose: 
         {description && (
           <div className="flex flex-col gap-1.5">
             <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#a78bfa" }}>{t.arena.previewAbout}</p>
-            <p className="text-sm leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.85, direction: isAr ? "rtl" : "ltr" }}>{description}</p>
+            <p className="text-base leading-relaxed" style={{ color: "#e8d5a0", opacity: 0.85, direction: isAr ? "rtl" : "ltr" }}>{description}</p>
           </div>
         )}
 
@@ -354,7 +356,11 @@ function CategoryPreviewModal({ cat, onClose }: { cat: CategoryOption; onClose: 
                 style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>
             {t.arena.previewSampleQ}
           </span>
-          <p className="text-base md:text-lg font-bold leading-snug" style={{ color: "#e8d5a0", direction: isAr ? "rtl" : "ltr" }}>{question}</p>
+          {sampleImage && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={sampleImage} alt="" className="w-full max-h-56 rounded-xl object-cover" style={{ backgroundColor: "#0d091a" }} />
+          )}
+          <p className="text-lg md:text-xl font-bold leading-snug" style={{ color: "#e8d5a0", direction: isAr ? "rtl" : "ltr" }}>{question}</p>
           {revealed ? (
             <div className="pt-3" style={{ borderTop: "1px solid #2e2050" }}>
               <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: "#d4860a" }}>{t.arena.previewAnswer}</p>
@@ -1242,6 +1248,7 @@ export default function ArenaGame() {
             sample_answer_en:    (c.sample_answer_en as string | null) ?? null,
             sample_question_ar:  (c.sample_question_ar as string | null) ?? null,
             sample_answer_ar:    (c.sample_answer_ar as string | null) ?? null,
+            sample_image_url:    (c.sample_image_url as string | null) ?? null,
           }));
         } catch { return null; }
       })();

@@ -508,7 +508,7 @@ export default function QuestionsPage() {
 
       {showForm && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "#00000088" }}>
-          <div className="w-full max-w-lg rounded-2xl p-7 flex flex-col gap-5 overflow-y-auto max-h-screen" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+          <div className="w-full max-w-xl rounded-2xl p-7 flex flex-col gap-5 overflow-y-auto max-h-screen" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
             <h2 className="text-lg font-extrabold" style={{ color: "#e8d5a0" }}>{editId ? "Edit Question" : "New Question"}</h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
@@ -670,7 +670,7 @@ export default function QuestionsPage() {
 
       {showBulk && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "#00000088" }}>
-          <div className="w-full max-w-lg rounded-2xl p-7 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+          <div className="w-full max-w-xl rounded-2xl p-7 flex flex-col gap-5" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
             <h2 className="text-lg font-extrabold" style={{ color: "#e8d5a0" }}>Bulk Upload</h2>
             <p className="text-xs" style={{ color: "#e8d5a0", opacity: 0.55 }}>One question per line: <span style={{ color: "#d4860a" }}>Category | Points | Question | Answer</span></p>
             <textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={"Science | 200 | What is the symbol for water? | H₂O\nHistory | 400 | Who was the first US president? | George Washington"} rows={8} className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none font-mono" style={{ backgroundColor: "#120d1f", border: "1px solid #2e2050", color: "#e8d5a0" }} />

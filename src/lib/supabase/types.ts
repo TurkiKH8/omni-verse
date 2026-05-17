@@ -47,6 +47,9 @@ export interface Category {
   sample_answer_en?: string;
   sample_question_ar?: string;
   sample_answer_ar?: string;
+  // Optional photo shown alongside the sample question in the "?" preview
+  // (see add-sample-image.sql migration).
+  sample_image_url?: string | null;
 }
 
 export interface Question {
