@@ -58,6 +58,19 @@ function diffColor(rowIdx: number, totalRows: number, answered: boolean) {
   return "#ef444499";
 }
 
+// Same grid the phone uses for a single category, so 1 category lays
+// out as a neat grid (e.g. 24 → 6×4) instead of one tall ugly column.
+function singleCatLayout(count: number): { cols: number; rows: number } {
+  if (count === 24) return { cols: 6, rows: 4 };
+  if (count === 12) return { cols: 4, rows: 3 };
+  if (count === 8) return { cols: 4, rows: 2 };
+  if (count === 6) return { cols: 3, rows: 2 };
+  if (count === 5) return { cols: 5, rows: 1 };
+  if (count <= 4) return { cols: count, rows: 1 };
+  const cols = Math.ceil(Math.sqrt(count));
+  return { cols, rows: Math.ceil(count / cols) };
+}
+
 export default function TvPage() {
   const { lang } = useLanguage();
   const isAr = lang === "ar";
@@ -218,21 +231,48 @@ export default function TvPage() {
     >
       {/* Header: session + scores */}
       <div className="flex items-center justify-between gap-4 mb-4 shrink-0">
-        <h1 className="text-xl md:text-3xl font-extrabold truncate" style={{ color: "#e8d5a0" }}>{game.sessionName || "Omni-Verse"}</h1>
+        <h1 className="text-lg md:text-2xl font-extrabold truncate" style={{ color: "#e8d5a0" }}>{game.sessionName || "Omni-Verse"}</h1>
         {game.gameMode === "team" && game.teams.length > 0 && (
-          <div className="flex gap-2 md:gap-3 flex-wrap justify-end">
+          <div className="flex gap-2 flex-wrap justify-end">
             {[...game.teams].sort((a, b) => b.score - a.score).map((tm) => (
-              <div key={tm.id} className="flex items-center gap-2 px-3 md:px-4 py-1 rounded-full" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
-                <span className="text-sm md:text-base font-medium" style={{ color: "#e8d5a0" }}>{tm.name}</span>
-                <span className="text-sm md:text-base font-extrabold" style={{ color: "#d4860a" }}>{tm.score.toLocaleString()}</span>
+              <div key={tm.id} className="flex items-center gap-2 px-3 py-1 rounded-full" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+                <span className="text-xs md:text-sm font-medium" style={{ color: "#e8d5a0" }}>{tm.name}</span>
+                <span className="text-xs md:text-sm font-extrabold" style={{ color: "#d4860a" }}>{tm.score.toLocaleString()}</span>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Board */}
-      {game.step === "board" && game.board.length > 0 && (
+      {/* Board — ONE category: centered cover + a neat grid of cells
+          (mirrors the phone). MANY categories: one column per category. */}
+      {game.step === "board" && game.board.length === 1 && (() => {
+        const cells = game.board[0];
+        const lay = singleCatLayout(cells.length);
+        return (
+          <div className="flex-1 min-h-0 flex flex-col gap-3">
+            <div className="shrink-0 mx-auto flex flex-col rounded-xl overflow-hidden"
+              style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", width: 200 }}>
+              {cells[0]?.category_image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={cells[0].category_image_url} alt="" loading="eager" decoding="async" className="w-full aspect-[4/5] object-cover" style={{ backgroundColor: "#0d091a", maxHeight: "20vh" }} />
+              )}
+              <span className="px-3 py-1.5 text-center text-sm md:text-lg font-bold uppercase tracking-wide truncate" style={{ color: "#a78bfa" }}>{catLabel(cells[0])}</span>
+            </div>
+            <div className="flex-1 min-h-0 grid gap-2 md:gap-3"
+              style={{ gridTemplateColumns: `repeat(${lay.cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${lay.rows}, minmax(0, 1fr))` }}>
+              {cells.map((cell, idx) => (
+                <div key={`${cell.category}-${cell.points}`}
+                  className="rounded-xl text-center font-extrabold text-lg md:text-3xl flex items-center justify-center"
+                  style={{ backgroundColor: cell.answered ? "#1e153088" : "#1e1530", border: `2px solid ${diffColor(idx, cells.length, cell.answered)}`, color: cell.answered ? "#2e205066" : "#d4860a" }}>
+                  {cell.answered ? "—" : cell.points.toLocaleString()}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+      {game.step === "board" && game.board.length > 1 && (
         <div className="flex-1 min-h-0 grid gap-2 md:gap-3"
           style={{ gridTemplateColumns: `repeat(${game.board.length}, minmax(0, 1fr))` }}>
           {game.board.map((col) => (
@@ -240,14 +280,14 @@ export default function TvPage() {
               <div className="shrink-0 rounded-xl flex flex-col overflow-hidden" style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
                 {col[0]?.category_image_url && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={col[0].category_image_url} alt="" loading="eager" decoding="async" className="w-full aspect-[4/5] object-cover" style={{ backgroundColor: "#0d091a", maxHeight: "19vh" }} />
+                  <img src={col[0].category_image_url} alt="" loading="eager" decoding="async" className="w-full aspect-[4/5] object-cover" style={{ backgroundColor: "#0d091a", maxHeight: "16vh" }} />
                 )}
-                <span className="px-2 py-1.5 text-center text-xs md:text-lg font-bold uppercase tracking-wide truncate" style={{ color: "#a78bfa" }}>{catLabel(col[0])}</span>
+                <span className="px-2 py-1.5 text-center text-xs md:text-base font-bold uppercase tracking-wide truncate" style={{ color: "#a78bfa" }}>{catLabel(col[0])}</span>
               </div>
               <div className="flex-1 min-h-0 flex flex-col gap-2">
                 {col.map((cell, rowIdx) => (
                   <div key={`${cell.category}-${cell.points}`}
-                    className="flex-1 min-h-0 rounded-xl text-center font-extrabold text-xl md:text-4xl flex items-center justify-center"
+                    className="flex-1 min-h-0 rounded-xl text-center font-extrabold text-lg md:text-3xl flex items-center justify-center"
                     style={{ backgroundColor: cell.answered ? "#1e153088" : "#1e1530", border: `2px solid ${diffColor(rowIdx, col.length, cell.answered)}`, color: cell.answered ? "#2e205066" : "#d4860a" }}>
                     {cell.answered ? "—" : cell.points.toLocaleString()}
                   </div>
@@ -262,29 +302,29 @@ export default function TvPage() {
       {game.step === "question" && game.currentCell && (
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col items-center justify-center gap-5 text-center">
           <div className="flex items-center gap-3 shrink-0">
-            <span className="px-4 py-1 rounded-full text-sm md:text-lg font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{catLabel(game.currentCell)}</span>
-            <span className="px-4 py-1 rounded-full text-sm md:text-lg font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{game.currentCell.points.toLocaleString()}</span>
+            <span className="px-3 py-1 rounded-full text-xs md:text-base font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{catLabel(game.currentCell)}</span>
+            <span className="px-3 py-1 rounded-full text-xs md:text-base font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{game.currentCell.points.toLocaleString()}</span>
           </div>
           {game.currentCell.image_url && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={game.currentCell.image_url} alt="" loading="eager" decoding="async" className="max-h-[38vh] object-contain rounded-2xl" style={{ backgroundColor: "#120d1f" }} />
+            <img src={game.currentCell.image_url} alt="" loading="eager" decoding="async" className="max-h-[34vh] object-contain rounded-2xl" style={{ backgroundColor: "#120d1f" }} />
           )}
           {game.currentCell.video_url && (
-            <video src={game.currentCell.video_url} autoPlay controls className="max-h-[38vh] rounded-2xl" style={{ backgroundColor: "#000" }} />
+            <video src={game.currentCell.video_url} autoPlay controls className="max-h-[34vh] rounded-2xl" style={{ backgroundColor: "#000" }} />
           )}
-          {game.currentCell.audio_url && <audio src={game.currentCell.audio_url} controls autoPlay className="w-full max-w-xl" />}
-          <p className="text-2xl md:text-5xl font-extrabold leading-snug max-w-5xl" style={{ color: "#e8d5a0" }}>{qText(game.currentCell)}</p>
+          {game.currentCell.audio_url && <audio src={game.currentCell.audio_url} controls autoPlay className="w-full max-w-lg" />}
+          <p className="text-xl md:text-4xl font-extrabold leading-snug max-w-5xl" style={{ color: "#e8d5a0" }}>{qText(game.currentCell)}</p>
         </div>
       )}
 
       {/* Answer */}
       {game.step === "answer" && game.currentCell && (
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col items-center justify-center gap-5 text-center">
-          <span className="px-4 py-1 rounded-full text-sm md:text-lg font-bold uppercase shrink-0" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{catLabel(game.currentCell)}</span>
-          <p className="text-lg md:text-2xl italic max-w-4xl" style={{ color: "#e8d5a0", opacity: 0.75 }}>{qText(game.currentCell)}</p>
-          <div className="rounded-2xl px-8 py-6" style={{ backgroundColor: "#1e1530", border: "1px solid #d4860a" }}>
-            <p className="text-sm md:text-lg mb-3 font-bold" style={{ color: "#d4860a" }}>{gAr ? "✓ الإجابة الصحيحة" : "✓ Correct Answer"}</p>
-            <p className="text-3xl md:text-5xl font-extrabold" style={{ color: "#e8d5a0" }}>{aText(game.currentCell)}</p>
+          <span className="px-3 py-1 rounded-full text-xs md:text-base font-bold uppercase shrink-0" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{catLabel(game.currentCell)}</span>
+          <p className="text-base md:text-xl italic max-w-4xl" style={{ color: "#e8d5a0", opacity: 0.75 }}>{qText(game.currentCell)}</p>
+          <div className="rounded-2xl px-7 py-5" style={{ backgroundColor: "#1e1530", border: "1px solid #d4860a" }}>
+            <p className="text-xs md:text-base mb-2 font-bold" style={{ color: "#d4860a" }}>{gAr ? "✓ الإجابة الصحيحة" : "✓ Correct Answer"}</p>
+            <p className="text-2xl md:text-4xl font-extrabold" style={{ color: "#e8d5a0" }}>{aText(game.currentCell)}</p>
           </div>
         </div>
       )}
@@ -292,22 +332,22 @@ export default function TvPage() {
       {/* Results */}
       {game.step === "results" && (
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col items-center justify-center gap-5 text-center">
-          <div className="text-6xl">🏆</div>
-          <h2 className="text-3xl md:text-5xl font-extrabold" style={{ color: "#e8d5a0" }}>{gAr ? "انتهت اللعبة!" : "Game Over!"}</h2>
+          <div className="text-5xl">🏆</div>
+          <h2 className="text-2xl md:text-4xl font-extrabold" style={{ color: "#e8d5a0" }}>{gAr ? "انتهت اللعبة!" : "Game Over!"}</h2>
           {game.gameMode === "solo" ? (
-            <div className="rounded-2xl px-10 py-8" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
-              <p className="text-base mb-2" style={{ opacity: 0.6 }}>{gAr ? "نتيجتك النهائية" : "Final Score"}</p>
-              <p className="text-5xl md:text-7xl font-extrabold" style={{ color: "#d4860a" }}>{game.soloScore.toLocaleString()}</p>
+            <div className="rounded-2xl px-9 py-7" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+              <p className="text-sm mb-2" style={{ opacity: 0.6 }}>{gAr ? "نتيجتك النهائية" : "Final Score"}</p>
+              <p className="text-4xl md:text-6xl font-extrabold" style={{ color: "#d4860a" }}>{game.soloScore.toLocaleString()}</p>
             </div>
           ) : (
-            <div className="w-full max-w-2xl flex flex-col gap-2.5 overflow-hidden">
+            <div className="w-full max-w-2xl flex flex-col gap-2 overflow-hidden">
               {[...game.teams].sort((a, b) => b.score - a.score).map((tm, i) => (
-                <div key={tm.id} className="flex items-center justify-between px-7 py-4 rounded-2xl"
+                <div key={tm.id} className="flex items-center justify-between px-6 py-3 rounded-2xl"
                   style={{ backgroundColor: i === 0 ? "#d4860a22" : "#1e1530", border: `1px solid ${i === 0 ? "#d4860a" : "#2e2050"}` }}>
-                  <span className="flex items-center gap-3 text-xl md:text-2xl font-bold" style={{ color: "#e8d5a0" }}>
+                  <span className="flex items-center gap-3 text-lg md:text-xl font-bold" style={{ color: "#e8d5a0" }}>
                     <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}</span>{tm.name}
                   </span>
-                  <span className="text-xl md:text-2xl font-extrabold" style={{ color: i === 0 ? "#d4860a" : "#e8d5a0" }}>{tm.score.toLocaleString()}</span>
+                  <span className="text-lg md:text-xl font-extrabold" style={{ color: i === 0 ? "#d4860a" : "#e8d5a0" }}>{tm.score.toLocaleString()}</span>
                 </div>
               ))}
             </div>
@@ -316,7 +356,7 @@ export default function TvPage() {
       )}
 
       {/* Footer hint */}
-      <p className="text-center text-sm md:text-base mt-4 shrink-0" style={{ color: "#e8d5a0", opacity: 0.35 }}>
+      <p className="text-center text-xs md:text-sm mt-3 shrink-0" style={{ color: "#e8d5a0", opacity: 0.35 }}>
         {gAr ? "📱 يتحكم الهاتف في اللعبة" : "📱 The phone is controlling the game"}
       </p>
     </main>
