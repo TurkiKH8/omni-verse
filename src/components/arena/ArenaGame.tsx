@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { MOCK_QUESTIONS } from "@/lib/mockQuestions";
 import { useLanguage } from "@/components/LanguageProvider";
+import ConnectToTv from "@/components/arena/ConnectToTv";
 
 type Step = "categories" | "gameMode" | "session" | "board" | "question" | "answer" | "results";
 type GameMode = "solo" | "team";
@@ -796,10 +797,13 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           <h2 className="text-lg md:text-xl font-extrabold truncate" style={{ color: "#e8d5a0" }}>{sessionName}</h2>
           <p className="text-xs mt-0.5" style={{ color: "#e8d5a0", opacity: 0.5 }}>{answered}/{total} {t.arena.answered}</p>
         </div>
-        <button onClick={onEndGame} className="shrink-0 px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs font-bold"
-          style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed", color: "#a78bfa" }}>
-          {t.arena.endGame}
-        </button>
+        <div className="shrink-0 flex items-center gap-2">
+          <ConnectToTv />
+          <button onClick={onEndGame} className="px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs font-bold"
+            style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed", color: "#a78bfa" }}>
+            {t.arena.endGame}
+          </button>
+        </div>
       </div>
 
       {/* Team scores (compact) */}
