@@ -18,7 +18,7 @@ import { useLanguage } from "@/components/LanguageProvider";
 
 type UI = "closed" | "form" | "linking" | "linked";
 
-export default function ConnectToTv() {
+export default function ConnectToTv({ onLinked }: { onLinked?: (sessionId: string) => void }) {
   const { t } = useLanguage();
   const [ui, setUi] = useState<UI>("closed");
   const [digits, setDigits] = useState(["", "", "", ""]);
@@ -81,6 +81,8 @@ export default function ConnectToTv() {
         body: JSON.stringify({ code, userId }),
       });
       if (res.ok) {
+        const out = await res.json().catch(() => null);
+        if (out?.id) onLinked?.(out.id as string);
         setUi("linked");
         return;
       }

@@ -778,8 +778,8 @@ function singleCatLayout(count: number): { cols: number; rows: number } {
   return { cols, rows: Math.ceil(count / cols) };
 }
 
-function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGame }:
-  { board: BoardCell[][]; teams: Team[]; gameMode: GameMode; sessionName: string; onSelectCell: (c: BoardCell) => void; onEndGame: () => void }) {
+function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGame, onTvLinked }:
+  { board: BoardCell[][]; teams: Team[]; gameMode: GameMode; sessionName: string; onSelectCell: (c: BoardCell) => void; onEndGame: () => void; onTvLinked: (id: string) => void }) {
   const { t, lang } = useLanguage();
   const answered = board.flat().filter((c) => c.answered).length;
   const total    = board.flat().length;
@@ -798,7 +798,7 @@ function GameBoard({ board, teams, gameMode, sessionName, onSelectCell, onEndGam
           <p className="text-xs mt-0.5" style={{ color: "#e8d5a0", opacity: 0.5 }}>{answered}/{total} {t.arena.answered}</p>
         </div>
         <div className="shrink-0 flex items-center gap-2">
-          <ConnectToTv />
+          <ConnectToTv onLinked={onTvLinked} />
           <button onClick={onEndGame} className="px-3 py-1.5 md:px-4 md:py-2 rounded-full text-xs font-bold"
             style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed", color: "#a78bfa" }}>
             {t.arena.endGame}
@@ -1204,6 +1204,7 @@ function ResultsScreen({ teams, gameMode, soloScore, sessionName, onPlayAgain }:
 
 export default function ArenaGame() {
   const router = useRouter();
+  const { lang } = useLanguage();
 
   const [ready,       setReady]       = useState(false);
   const [coins,       setCoins]       = useState(0);
@@ -1238,6 +1239,33 @@ export default function ArenaGame() {
   // DB id for the active game row — created on startGame, hydrated on resume.
   // Used to UPDATE the row as the game progresses so refresh/close = recoverable.
   const [sessionId, setSessionId] = useState<string | null>(null);
+
+  // When the phone has linked a TV (via the "Connect to TV" popup),
+  // this holds that pairing-session id. While set, every game change
+  // is mirrored to the TV through the secure /api/tv/sync route.
+  const [tvSessionId, setTvSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tvSessionId) return;
+    const mirror = ["board", "question", "answer", "results"].includes(step);
+    if (!mirror) return;
+    const payload = {
+      v: 1,
+      step,
+      lang,
+      sessionName,
+      gameMode,
+      teams,
+      soloScore,
+      board,
+      currentCell,
+    };
+    fetch("/api/tv/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: tvSessionId, state: payload }),
+    }).catch(() => {});
+  }, [tvSessionId, step, lang, sessionName, gameMode, teams, soloScore, board, currentCell]);
 
   // Arena music
   const [arenaMusicUrl, setArenaMusicUrl] = useState("");
@@ -1696,7 +1724,7 @@ export default function ArenaGame() {
       )}
       {step === "board" && board.length > 0 && (
         <GameBoard board={board} teams={teams} gameMode={gameMode} sessionName={sessionName}
-          onSelectCell={handleSelectCell} onEndGame={() => handleEndGame(teams, soloScore)} />
+          onSelectCell={handleSelectCell} onEndGame={() => handleEndGame(teams, soloScore)} onTvLinked={setTvSessionId} />
       )}
       {step === "question" && currentCell && (
         <QuestionView cell={currentCell} tickUrl={tickUrl} onReveal={handleReveal} onReport={() => setReportCell(currentCell)} />
