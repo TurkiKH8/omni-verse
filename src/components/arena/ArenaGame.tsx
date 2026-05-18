@@ -44,11 +44,12 @@ interface CategoryOption {
   sample_image_url?: string | null;
 }
 
-// Every category always has 6 questions on the fixed 200→1200 ladder,
-// no matter how many categories are picked. The ONLY exception: when
-// exactly 5 categories are chosen, each has 5 questions.
+// Every session totals ~24 questions regardless of how many categories
+// are picked (5 categories = 25 is the one known exception). The point
+// VALUES are always the fixed 200→1200 ladder, repeated as needed
+// (see getPointValues).
 const QUESTIONS_PER_CATEGORY: Record<number, number> = {
-  1: 6, 2: 6, 3: 6, 4: 6, 5: 5, 6: 6,
+  1: 24, 2: 12, 3: 8, 4: 6, 5: 5, 6: 4,
 };
 
 // Subtle border-color tint based on a cell's relative difficulty (0 = easiest).
@@ -63,11 +64,21 @@ function difficultyBorderColor(rowIdx: number, totalRows: number, answered: bool
   return "#ef444499";               // brutal — red
 }
 
+// The point value of each cell in a category column. Always drawn from
+// the fixed 200→1200 ladder, repeated/selected so the per-category
+// count keeps every session at ~24 total questions (patterns confirmed
+// with Turki).
 function getPointValues(questionsPerCat: number): number[] {
-  // 5-category games: 5 questions each, fixed 400→1200 (drop the 200).
-  if (questionsPerCat === 5) return [400, 600, 800, 1000, 1200];
-  // Everything else: the fixed six-tier ladder, always 200→1200.
-  return [200, 400, 600, 800, 1000, 1200];
+  const L = [200, 400, 600, 800, 1000, 1200];
+  switch (questionsPerCat) {
+    case 24: return L.flatMap((v) => [v, v, v, v]);              // 1 cat: 4 of each tier
+    case 12: return L.flatMap((v) => [v, v]);                    // 2 cats: 2 of each tier
+    case 8:  return [200, 400, 400, 600, 800, 800, 1000, 1200];  // 3 cats: even spread
+    case 6:  return L;                                           // 4 cats: one of each
+    case 5:  return [400, 600, 800, 1000, 1200];                 // 5 cats: drop the 200
+    case 4:  return [200, 400, 800, 1200];                       // 6 cats: wide spread
+    default: return L;
+  }
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -163,8 +174,10 @@ async function fetchBoardFromSupabase(
     if (qs.length === 0) return null;
 
     const pointValues = getPointValues(questionsPerCat);
-    // Every board now uses real stored tiers (200…1200 / 400…1200), so
-    // each cell pulls a question whose points exactly match that tier.
+    // Every cell value is a real stored tier (200…1200), so each cell
+    // pulls a question whose points exactly match that tier. When a tier
+    // repeats in the column, pickColumnQuestions de-dupes per column and
+    // falls back gracefully if a category is short on that tier.
     const standard6  = true;
 
     return categories.map((catName) => {
