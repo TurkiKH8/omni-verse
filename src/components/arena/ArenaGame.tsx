@@ -62,7 +62,9 @@ function difficultyBorderColor(rowIdx: number, totalRows: number, answered: bool
 
 function getPointValues(questionsPerCat: number): number[] {
   if (questionsPerCat === 6) return [200, 400, 600, 800, 1000, 1200];
-  return Array.from({ length: questionsPerCat }, (_, i) => (i + 1) * 100);
+  // Step by 200 so every board uses the same 200-based ladder as the
+  // 6-cell board (200, 400, 600, …) — never the old 100/…/2400 mix.
+  return Array.from({ length: questionsPerCat }, (_, i) => (i + 1) * 200);
 }
 
 function shuffle<T>(arr: T[]): T[] {

@@ -4,8 +4,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { useLanguage } from "@/components/LanguageProvider";
 
-// Pages where AFK monitor is DISABLED (game pages)
-const AFK_EXCLUDED_PREFIXES = ["/arena", "/admin"];
+// Pages where AFK monitor is DISABLED (game pages, and the TV mirror —
+// a TV is left untouched on purpose, so an "are you there?" prompt
+// would just sit there annoyingly).
+const AFK_EXCLUDED_PREFIXES = ["/arena", "/admin", "/tv"];
 
 const INITIAL_TIMEOUT_MS  = 15 * 60 * 1000; // 15 minutes
 const TIMEOUT_INCREMENT_MS = 10 * 60 * 1000; // +10 minutes each time user stays
