@@ -207,6 +207,22 @@ async function fetchBoardFromSupabase(
   } catch { return null; }
 }
 
+// Guarantee every cell carries its category cover. Mock boards never
+// set it, the Supabase path can miss it, and old saved sessions predate
+// it — so we always backfill from the SAME live category list the
+// picker uses (which is confirmed to have the covers).
+function withCovers(board: BoardCell[][], cats: CategoryOption[]): BoardCell[][] {
+  const imgByName = new Map<string, string>();
+  for (const c of cats) if (c.image_url) imgByName.set(c.name, c.image_url);
+  return board.map((col) =>
+    col.map((cell) =>
+      cell.category_image_url
+        ? cell
+        : { ...cell, category_image_url: imgByName.get(cell.category) ?? null }
+    )
+  );
+}
+
 function buildBoardFromMock(categories: string[], questionsPerCat: number): BoardCell[][] {
   const pointValues = getPointValues(questionsPerCat);
   return categories.map((cat) => {
@@ -1551,7 +1567,7 @@ export default function ArenaGame() {
           await supabase.from("sessions").update({ status: "expired" }).eq("id", resumeId);
           return;
         }
-        const restoredBoard = (data.board_state ?? []) as BoardCell[][];
+        const restoredBoard = withCovers((data.board_state ?? []) as BoardCell[][], liveCategories);
         const restoredTeams = (data.teams_state ?? []) as Team[];
         setSessionId(data.id as string);
         setSessionName((data.name as string) ?? "");
@@ -1641,7 +1657,7 @@ export default function ArenaGame() {
     }
 
     const dbBoard   = await fetchBoardFromSupabase(selectedCategories, questionsPerCat, seenIds);
-    const builtBoard = dbBoard ?? buildBoardFromMock(selectedCategories, questionsPerCat);
+    const builtBoard = withCovers(dbBoard ?? buildBoardFromMock(selectedCategories, questionsPerCat), liveCategories);
     const initialTeams: Team[] = Array.from({ length: teamCount }, (_, i) => ({ id: i, name: teamNames[i] || `Team ${i + 1}`, score: 0 }));
 
     setBoard(builtBoard);
