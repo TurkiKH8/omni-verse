@@ -654,10 +654,19 @@ function CategorySelect({ selected, coins, categories, unseenByCategory, favorit
           }}
         />
       )}
-      <div className="flex justify-end">
+      {/* Floating Next: fixed to the middle-right so it follows the user
+          wherever they scroll. Only on this page — CategorySelect
+          unmounts on every other step, so it disappears automatically. */}
+      <div className="fixed right-3 md:right-6 top-1/2 -translate-y-1/2 z-40">
         <button onClick={onNext} disabled={selected.length === 0}
-          className="px-8 py-3 rounded-full font-bold text-sm"
-          style={{ backgroundColor: "#d4860a", color: "#120d1f", opacity: selected.length === 0 ? 0.4 : 1, cursor: selected.length === 0 ? "not-allowed" : "pointer" }}>
+          className="px-7 py-4 rounded-full font-bold text-sm transition-opacity"
+          style={{
+            backgroundColor: "#d4860a",
+            color: "#120d1f",
+            opacity: selected.length === 0 ? 0.4 : 1,
+            cursor: selected.length === 0 ? "not-allowed" : "pointer",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px #d4860a55",
+          }}>
           {t.arena.next}
         </button>
       </div>
