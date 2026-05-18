@@ -67,6 +67,8 @@ export default function TvPage() {
   const [errMsg, setErrMsg] = useState<string>("");
   const [game, setGame] = useState<GameState | null>(null);
   const idRef = useRef<string | null>(null);
+  // URLs already warmed into the browser cache (so each one preloads once).
+  const preloadedRef = useRef<Set<string>>(new Set());
 
   // Create the pairing session once when the TV opens this page.
   useEffect(() => {
@@ -126,11 +128,29 @@ export default function TvPage() {
     };
   }, [phase]);
 
+  // Once the TV is linked, warm every category cover (and question
+  // image) into the browser cache straight away, so the board and the
+  // questions appear instantly instead of loading on screen.
+  useEffect(() => {
+    if (!game?.board?.length) return;
+    for (const col of game.board) {
+      for (const cell of col) {
+        for (const u of [cell.category_image_url, cell.image_url]) {
+          if (!u || preloadedRef.current.has(u)) continue;
+          preloadedRef.current.add(u);
+          const img = new Image();
+          img.decoding = "async";
+          img.src = u;
+        }
+      }
+    }
+  }, [game]);
+
   const shell = (children: React.ReactNode) => (
     <main
       dir={isAr ? "rtl" : "ltr"}
       className="min-h-screen w-full flex flex-col items-center justify-center px-6 py-8 text-center"
-      style={{ background: "radial-gradient(ellipse at top, #160f28 0%, #0a0713 70%)", color: "#e8d5a0" }}
+      style={{ color: "#e8d5a0" }}
     >
       {children}
     </main>
@@ -193,18 +213,18 @@ export default function TvPage() {
   return (
     <main
       dir={gAr ? "rtl" : "ltr"}
-      className="min-h-screen w-full flex flex-col px-5 py-5 md:px-10 md:py-8"
-      style={{ background: "radial-gradient(ellipse at top, #160f28 0%, #0a0713 70%)", color: "#e8d5a0" }}
+      className="h-screen w-full flex flex-col overflow-hidden px-5 py-4 md:px-9 md:py-6"
+      style={{ color: "#e8d5a0" }}
     >
       {/* Header: session + scores */}
-      <div className="flex items-center justify-between gap-4 mb-5 shrink-0">
-        <h1 className="text-2xl md:text-4xl font-extrabold truncate" style={{ color: "#e8d5a0" }}>{game.sessionName || "Omni-Verse"}</h1>
+      <div className="flex items-center justify-between gap-4 mb-4 shrink-0">
+        <h1 className="text-xl md:text-3xl font-extrabold truncate" style={{ color: "#e8d5a0" }}>{game.sessionName || "Omni-Verse"}</h1>
         {game.gameMode === "team" && game.teams.length > 0 && (
           <div className="flex gap-2 md:gap-3 flex-wrap justify-end">
             {[...game.teams].sort((a, b) => b.score - a.score).map((tm) => (
-              <div key={tm.id} className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-full" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
-                <span className="text-sm md:text-lg font-medium" style={{ color: "#e8d5a0" }}>{tm.name}</span>
-                <span className="text-sm md:text-lg font-extrabold" style={{ color: "#d4860a" }}>{tm.score.toLocaleString()}</span>
+              <div key={tm.id} className="flex items-center gap-2 px-3 md:px-4 py-1 rounded-full" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+                <span className="text-sm md:text-base font-medium" style={{ color: "#e8d5a0" }}>{tm.name}</span>
+                <span className="text-sm md:text-base font-extrabold" style={{ color: "#d4860a" }}>{tm.score.toLocaleString()}</span>
               </div>
             ))}
           </div>
@@ -213,21 +233,21 @@ export default function TvPage() {
 
       {/* Board */}
       {game.step === "board" && game.board.length > 0 && (
-        <div className="flex-1 min-h-0 grid gap-3 md:gap-4"
+        <div className="flex-1 min-h-0 grid gap-2 md:gap-3"
           style={{ gridTemplateColumns: `repeat(${game.board.length}, minmax(0, 1fr))` }}>
           {game.board.map((col) => (
-            <div key={col[0]?.category} className="flex flex-col gap-2 md:gap-3 min-h-0">
+            <div key={col[0]?.category} className="flex flex-col gap-2 min-h-0">
               <div className="shrink-0 rounded-xl flex flex-col overflow-hidden" style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
                 {col[0]?.category_image_url && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={col[0].category_image_url} alt="" className="w-full aspect-[4/5] object-cover" style={{ backgroundColor: "#0d091a", maxHeight: "24vh" }} />
+                  <img src={col[0].category_image_url} alt="" loading="eager" decoding="async" className="w-full aspect-[4/5] object-cover" style={{ backgroundColor: "#0d091a", maxHeight: "19vh" }} />
                 )}
-                <span className="px-2 py-2 text-center text-sm md:text-xl font-bold uppercase tracking-wide truncate" style={{ color: "#a78bfa" }}>{catLabel(col[0])}</span>
+                <span className="px-2 py-1.5 text-center text-xs md:text-lg font-bold uppercase tracking-wide truncate" style={{ color: "#a78bfa" }}>{catLabel(col[0])}</span>
               </div>
-              <div className="flex-1 min-h-0 flex flex-col gap-2 md:gap-3">
+              <div className="flex-1 min-h-0 flex flex-col gap-2">
                 {col.map((cell, rowIdx) => (
                   <div key={`${cell.category}-${cell.points}`}
-                    className="flex-1 min-h-0 rounded-xl text-center font-extrabold text-2xl md:text-5xl flex items-center justify-center"
+                    className="flex-1 min-h-0 rounded-xl text-center font-extrabold text-xl md:text-4xl flex items-center justify-center"
                     style={{ backgroundColor: cell.answered ? "#1e153088" : "#1e1530", border: `2px solid ${diffColor(rowIdx, col.length, cell.answered)}`, color: cell.answered ? "#2e205066" : "#d4860a" }}>
                     {cell.answered ? "—" : cell.points.toLocaleString()}
                   </div>
@@ -240,54 +260,54 @@ export default function TvPage() {
 
       {/* Question */}
       {game.step === "question" && game.currentCell && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 text-center">
-          <div className="flex items-center gap-3">
-            <span className="px-4 py-1.5 rounded-full text-base md:text-xl font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{catLabel(game.currentCell)}</span>
-            <span className="px-4 py-1.5 rounded-full text-base md:text-xl font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{game.currentCell.points.toLocaleString()}</span>
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col items-center justify-center gap-5 text-center">
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="px-4 py-1 rounded-full text-sm md:text-lg font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{catLabel(game.currentCell)}</span>
+            <span className="px-4 py-1 rounded-full text-sm md:text-lg font-bold" style={{ backgroundColor: "#d4860a22", color: "#d4860a", border: "1px solid #d4860a44" }}>{game.currentCell.points.toLocaleString()}</span>
           </div>
           {game.currentCell.image_url && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={game.currentCell.image_url} alt="" className="max-h-[45vh] object-contain rounded-2xl" style={{ backgroundColor: "#120d1f" }} />
+            <img src={game.currentCell.image_url} alt="" loading="eager" decoding="async" className="max-h-[38vh] object-contain rounded-2xl" style={{ backgroundColor: "#120d1f" }} />
           )}
           {game.currentCell.video_url && (
-            <video src={game.currentCell.video_url} autoPlay controls className="max-h-[45vh] rounded-2xl" style={{ backgroundColor: "#000" }} />
+            <video src={game.currentCell.video_url} autoPlay controls className="max-h-[38vh] rounded-2xl" style={{ backgroundColor: "#000" }} />
           )}
           {game.currentCell.audio_url && <audio src={game.currentCell.audio_url} controls autoPlay className="w-full max-w-xl" />}
-          <p className="text-3xl md:text-6xl font-extrabold leading-snug max-w-5xl" style={{ color: "#e8d5a0" }}>{qText(game.currentCell)}</p>
+          <p className="text-2xl md:text-5xl font-extrabold leading-snug max-w-5xl" style={{ color: "#e8d5a0" }}>{qText(game.currentCell)}</p>
         </div>
       )}
 
       {/* Answer */}
       {game.step === "answer" && game.currentCell && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 text-center">
-          <span className="px-4 py-1.5 rounded-full text-base md:text-xl font-bold uppercase" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{catLabel(game.currentCell)}</span>
-          <p className="text-xl md:text-3xl italic max-w-4xl" style={{ color: "#e8d5a0", opacity: 0.75 }}>{qText(game.currentCell)}</p>
-          <div className="rounded-2xl px-10 py-8" style={{ backgroundColor: "#1e1530", border: "1px solid #d4860a" }}>
-            <p className="text-base md:text-xl mb-3 font-bold" style={{ color: "#d4860a" }}>{gAr ? "✓ الإجابة الصحيحة" : "✓ Correct Answer"}</p>
-            <p className="text-4xl md:text-7xl font-extrabold" style={{ color: "#e8d5a0" }}>{aText(game.currentCell)}</p>
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col items-center justify-center gap-5 text-center">
+          <span className="px-4 py-1 rounded-full text-sm md:text-lg font-bold uppercase shrink-0" style={{ backgroundColor: "#7c3aed22", color: "#a78bfa", border: "1px solid #7c3aed44" }}>{catLabel(game.currentCell)}</span>
+          <p className="text-lg md:text-2xl italic max-w-4xl" style={{ color: "#e8d5a0", opacity: 0.75 }}>{qText(game.currentCell)}</p>
+          <div className="rounded-2xl px-8 py-6" style={{ backgroundColor: "#1e1530", border: "1px solid #d4860a" }}>
+            <p className="text-sm md:text-lg mb-3 font-bold" style={{ color: "#d4860a" }}>{gAr ? "✓ الإجابة الصحيحة" : "✓ Correct Answer"}</p>
+            <p className="text-3xl md:text-5xl font-extrabold" style={{ color: "#e8d5a0" }}>{aText(game.currentCell)}</p>
           </div>
         </div>
       )}
 
       {/* Results */}
       {game.step === "results" && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 text-center">
-          <div className="text-7xl">🏆</div>
-          <h2 className="text-4xl md:text-6xl font-extrabold" style={{ color: "#e8d5a0" }}>{gAr ? "انتهت اللعبة!" : "Game Over!"}</h2>
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col items-center justify-center gap-5 text-center">
+          <div className="text-6xl">🏆</div>
+          <h2 className="text-3xl md:text-5xl font-extrabold" style={{ color: "#e8d5a0" }}>{gAr ? "انتهت اللعبة!" : "Game Over!"}</h2>
           {game.gameMode === "solo" ? (
-            <div className="rounded-2xl px-12 py-10" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
-              <p className="text-lg mb-2" style={{ opacity: 0.6 }}>{gAr ? "نتيجتك النهائية" : "Final Score"}</p>
-              <p className="text-6xl md:text-8xl font-extrabold" style={{ color: "#d4860a" }}>{game.soloScore.toLocaleString()}</p>
+            <div className="rounded-2xl px-10 py-8" style={{ backgroundColor: "#1e1530", border: "1px solid #2e2050" }}>
+              <p className="text-base mb-2" style={{ opacity: 0.6 }}>{gAr ? "نتيجتك النهائية" : "Final Score"}</p>
+              <p className="text-5xl md:text-7xl font-extrabold" style={{ color: "#d4860a" }}>{game.soloScore.toLocaleString()}</p>
             </div>
           ) : (
-            <div className="w-full max-w-2xl flex flex-col gap-3">
+            <div className="w-full max-w-2xl flex flex-col gap-2.5 overflow-hidden">
               {[...game.teams].sort((a, b) => b.score - a.score).map((tm, i) => (
-                <div key={tm.id} className="flex items-center justify-between px-8 py-5 rounded-2xl"
+                <div key={tm.id} className="flex items-center justify-between px-7 py-4 rounded-2xl"
                   style={{ backgroundColor: i === 0 ? "#d4860a22" : "#1e1530", border: `1px solid ${i === 0 ? "#d4860a" : "#2e2050"}` }}>
-                  <span className="flex items-center gap-3 text-2xl md:text-3xl font-bold" style={{ color: "#e8d5a0" }}>
+                  <span className="flex items-center gap-3 text-xl md:text-2xl font-bold" style={{ color: "#e8d5a0" }}>
                     <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}</span>{tm.name}
                   </span>
-                  <span className="text-2xl md:text-3xl font-extrabold" style={{ color: i === 0 ? "#d4860a" : "#e8d5a0" }}>{tm.score.toLocaleString()}</span>
+                  <span className="text-xl md:text-2xl font-extrabold" style={{ color: i === 0 ? "#d4860a" : "#e8d5a0" }}>{tm.score.toLocaleString()}</span>
                 </div>
               ))}
             </div>
