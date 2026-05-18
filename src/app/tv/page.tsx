@@ -71,6 +71,17 @@ function singleCatLayout(count: number): { cols: number; rows: number } {
   return { cols, rows: Math.ceil(count / cols) };
 }
 
+// Multi-category board: how each category's cells grid under its cover
+// (mirrors the phone). Repeated tiers sit side by side.
+function catCellGrid(count: number): { cols: number; rows: number } {
+  if (count === 24) return { cols: 4, rows: 6 };
+  if (count === 12) return { cols: 2, rows: 6 };
+  if (count === 8) return { cols: 2, rows: 4 };
+  if (count === 6) return { cols: 1, rows: 6 };
+  if (count === 5) return { cols: 1, rows: 5 };
+  return { cols: 1, rows: count };
+}
+
 export default function TvPage() {
   const { lang } = useLanguage();
   const isAr = lang === "ar";
@@ -255,7 +266,7 @@ export default function TvPage() {
               style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44", width: 200 }}>
               {cells[0]?.category_image_url && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={cells[0].category_image_url} alt="" loading="eager" decoding="async" className="w-full aspect-[4/5] object-cover" style={{ backgroundColor: "#0d091a", maxHeight: "20vh" }} />
+                <img src={cells[0].category_image_url} alt="" loading="eager" decoding="async" className="w-full object-cover h-[19vh]" style={{ backgroundColor: "#0d091a" }} />
               )}
               <span className="px-3 py-1.5 text-center text-sm md:text-lg font-bold uppercase tracking-wide truncate" style={{ color: "#a78bfa" }}>{catLabel(cells[0])}</span>
             </div>
@@ -275,26 +286,33 @@ export default function TvPage() {
       {game.step === "board" && game.board.length > 1 && (
         <div className="flex-1 min-h-0 grid gap-2 md:gap-3"
           style={{ gridTemplateColumns: `repeat(${game.board.length}, minmax(0, 1fr))` }}>
-          {game.board.map((col) => (
+          {game.board.map((col) => {
+            const cg = catCellGrid(col.length);
+            return (
             <div key={col[0]?.category} className="flex flex-col gap-2 min-h-0">
               <div className="shrink-0 rounded-xl flex flex-col overflow-hidden" style={{ backgroundColor: "#7c3aed22", border: "1px solid #7c3aed44" }}>
                 {col[0]?.category_image_url && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={col[0].category_image_url} alt="" loading="eager" decoding="async" className="w-full aspect-[4/5] object-cover" style={{ backgroundColor: "#0d091a", maxHeight: "16vh" }} />
+                  <img src={col[0].category_image_url} alt="" loading="eager" decoding="async" className="w-full object-cover h-[15vh]" style={{ backgroundColor: "#0d091a" }} />
                 )}
                 <span className="px-2 py-1.5 text-center text-xs md:text-base font-bold uppercase tracking-wide truncate" style={{ color: "#a78bfa" }}>{catLabel(col[0])}</span>
               </div>
-              <div className="flex-1 min-h-0 flex flex-col gap-2">
+              <div className="flex-1 min-h-0 grid gap-2"
+                style={{
+                  gridTemplateColumns: `repeat(${cg.cols}, minmax(0, 1fr))`,
+                  gridTemplateRows:    `repeat(${cg.rows}, minmax(0, 1fr))`,
+                }}>
                 {col.map((cell, rowIdx) => (
                   <div key={`${cell.category}-${cell.points}`}
-                    className="flex-1 min-h-0 rounded-xl text-center font-extrabold text-lg md:text-3xl flex items-center justify-center"
+                    className="min-h-0 rounded-xl text-center font-extrabold text-lg md:text-3xl flex items-center justify-center"
                     style={{ backgroundColor: cell.answered ? "#1e153088" : "#1e1530", border: `2px solid ${diffColor(rowIdx, col.length, cell.answered)}`, color: cell.answered ? "#2e205066" : "#d4860a" }}>
                     {cell.answered ? "—" : cell.points.toLocaleString()}
                   </div>
                 ))}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
