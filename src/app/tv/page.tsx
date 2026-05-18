@@ -16,7 +16,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { useLanguage } from "@/components/LanguageProvider";
 
 type Phase = "loading" | "waiting" | "linked" | "error";
@@ -133,15 +133,20 @@ export default function TvPage() {
     if ((phase !== "waiting" && phase !== "linked") || !idRef.current) return;
     let stop = false;
     const tick = async () => {
-      const { data } = await supabase
-        .from("tv_sessions")
-        .select("phase, state")
-        .eq("id", idRef.current as string)
-        .maybeSingle();
-      if (stop || !data) return;
-      if (data.phase === "linked") {
-        setPhase("linked");
-        if (data.state) setGame(data.state as GameState);
+      try {
+        const res = await fetch(
+          `/api/tv/state?id=${encodeURIComponent(idRef.current as string)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { phase?: string; state?: GameState | null };
+        if (stop || !data) return;
+        if (data.phase === "linked") {
+          setPhase("linked");
+          if (data.state) setGame(data.state);
+        }
+      } catch {
+        /* transient network blip — the next tick retries */
       }
     };
     tick();
