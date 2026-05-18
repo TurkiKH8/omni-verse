@@ -44,8 +44,11 @@ interface CategoryOption {
   sample_image_url?: string | null;
 }
 
+// Every category always has 6 questions on the fixed 200→1200 ladder,
+// no matter how many categories are picked. The ONLY exception: when
+// exactly 5 categories are chosen, each has 5 questions.
 const QUESTIONS_PER_CATEGORY: Record<number, number> = {
-  1: 24, 2: 12, 3: 8, 4: 6, 5: 5, 6: 4,
+  1: 6, 2: 6, 3: 6, 4: 6, 5: 5, 6: 6,
 };
 
 // Subtle border-color tint based on a cell's relative difficulty (0 = easiest).
@@ -61,10 +64,10 @@ function difficultyBorderColor(rowIdx: number, totalRows: number, answered: bool
 }
 
 function getPointValues(questionsPerCat: number): number[] {
-  if (questionsPerCat === 6) return [200, 400, 600, 800, 1000, 1200];
-  // Step by 200 so every board uses the same 200-based ladder as the
-  // 6-cell board (200, 400, 600, …) — never the old 100/…/2400 mix.
-  return Array.from({ length: questionsPerCat }, (_, i) => (i + 1) * 200);
+  // 5-category games: 5 questions each, fixed 400→1200 (drop the 200).
+  if (questionsPerCat === 5) return [400, 600, 800, 1000, 1200];
+  // Everything else: the fixed six-tier ladder, always 200→1200.
+  return [200, 400, 600, 800, 1000, 1200];
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -160,7 +163,9 @@ async function fetchBoardFromSupabase(
     if (qs.length === 0) return null;
 
     const pointValues = getPointValues(questionsPerCat);
-    const standard6  = questionsPerCat === 6;
+    // Every board now uses real stored tiers (200…1200 / 400…1200), so
+    // each cell pulls a question whose points exactly match that tier.
+    const standard6  = true;
 
     return categories.map((catName) => {
       const catRow = cats.find((c) => c.name_en === catName);
