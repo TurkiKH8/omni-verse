@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
 // Service-role client — same trusted server-side pattern as
@@ -22,9 +23,18 @@ function todayStr() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, score } = await request.json() as { userId: string; score: number };
+    // The account that earns the coins is ALWAYS the logged-in user
+    // (from their login cookie), never an id the browser sends.
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+    const userId = user.id;
 
-    if (!userId || typeof score !== "number" || !Number.isFinite(score) || score < 0) {
+    const { score } = await request.json() as { score: number };
+
+    if (typeof score !== "number" || !Number.isFinite(score) || score < 0) {
       return NextResponse.json({ error: "Bad request" }, { status: 400 });
     }
     // Sanity ceiling so a spoofed absurd score can't poison the best.

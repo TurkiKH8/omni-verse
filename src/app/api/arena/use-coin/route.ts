@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
 const adminClient = createClient(
@@ -8,12 +9,22 @@ const adminClient = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, amount } = await request.json() as { userId: string; amount: number };
+    // Identify the caller from their login cookie — the account whose
+    // coins get spent is ALWAYS the logged-in user, never an id the
+    // browser sends. (Same pattern as profile/update & the admin routes.)
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+    const userId = user.id;
+
+    const { amount } = await request.json() as { amount: number };
 
     // This endpoint only ever SPENDS coins (1 per chosen category). Reject
     // anything that isn't a positive whole number — otherwise a negative
     // amount would slip past the balance check below and ADD coins.
-    if (!userId || typeof amount !== "number" || !Number.isInteger(amount) || amount <= 0) {
+    if (typeof amount !== "number" || !Number.isInteger(amount) || amount <= 0) {
       return NextResponse.json({ error: "Bad request" }, { status: 400 });
     }
 
