@@ -11,7 +11,11 @@ import type { Question } from "@/lib/supabase/types";
 const CATEGORIES = ["Science","History","Geography","Sports","Movies & TV","Music","Technology","Literature","Art","Food & Drink","Nature","Politics"];
 
 // Game logic: 24 point tiers from 100 to 2400 in steps of 100.
-const POINTS = Array.from({ length: 24 }, (_, i) => (i + 1) * 100);
+// The database only accepts these six point tiers
+// (schema: questions_points_check). The game board's easy→hard
+// ladder and every seeded question use exactly this set, so the
+// picker must offer only these — nothing else can be saved.
+const POINTS = [200, 400, 600, 800, 1000, 1200];
 
 // No hardcoded questions — the list is whatever Supabase returns (including
 // none). Demo mode without Supabase simply shows an empty list.
@@ -88,7 +92,7 @@ export default function QuestionsPage() {
   const [bulkText, setBulkText] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [form, setForm] = useState<FormState>({ category: "", points: 100, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
+  const [form, setForm] = useState<FormState>({ category: "", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageError, setImageError] = useState<string>("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -257,7 +261,7 @@ export default function QuestionsPage() {
   const openAdd = () => {
     setEditId(null);
     setSaveError("");
-    setForm({ category: selectedCat?.name ?? liveCategories[0] ?? "", points: 100, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
+    setForm({ category: selectedCat?.name ?? liveCategories[0] ?? "", points: 200, question_en: "", answer_en: "", question_ar: "", answer_ar: "", language: "EN", image_url: null, video_url: null, audio_url: null });
     setImageFile(null);  setImageError("");
     setVideoFile(null);  setVideoError("");
     setAudioFile(null);  setAudioError("");
